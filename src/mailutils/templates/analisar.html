@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block titulo %}Analisar email — mailutils{% endblock %}
+
+{% block conteudo %}
+<h1>Analisar um email</h1>
+
+<div class="notice notice--info">
+  <strong>O email não é guardado.</strong> A análise corre dentro do pedido e o
+  resultado fica no seu browser. Nada é escrito na base de dados nem em disco.
+  <br>
+  <span class="small">
+    Use isto para perceber <em>porque</em> um email lhe pareceu suspeito. Não é
+    uma forma de fazer email entrar onde não deve.
+  </span>
+</div>
+
+{% if erro == 'vazio' %}
+<div class="notice notice--erro" role="alert">
+  Cole o conteúdo do email, ou carregue o ficheiro <code>.eml</code>.
+</div>
+{% elif erro == 'grande' %}
+<div class="notice notice--erro" role="alert">
+  O conteúdo tem mais de {{ limite_kib }} KiB. O limite existe para o servidor
+  não passar tempo a analisar um ficheiro que não é um email.
+</div>
+{% elif erro == 'csrf' %}
+<div class="notice notice--erro" role="alert">Sessão expirada. Recarregue a página.</div>
+{% endif %}
+
+<div class="grid grid--split">
+  <div class="card">
+    <div class="card__title">
+      <h2 class="m-0">Email a analisar</h2>
+      {% if tem_resultado %}
+      <span class="pill">{{ 'cabeçalhos reconhecidos' if reconheceu_cabecalhos else 'sem cabeçalhos' }}</span>
+      {% endif %}
+    </div>
+
+    <form method="post" action="{{ raiz }}/analisar/" enctype="multipart/form-data"
+          id="form-analisar">
+      <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
+
+      <label class="field" for="ficheiro-eml">
+        <span class="field__label">Ficheiro <code>.eml</code> (opcional)</span>
+        <input type="file" id="ficheiro-eml" name="ficheiro" accept=".eml,message/rfc822,text/plain">
+        <span class="field__hint">
+          Num cliente de email, «ver mensagem original» e depois «guardar» dá um
+          <code>.eml</code>.
+        </span>
+      </label>
+
+      <label class="field" for="conteudo">
+        <span class="field__label">Ou cole aqui</span>
+        <textarea id="texto-email" name="conteudo" rows="14" spellcheck="false"
+                  placeholder="From: …&#10;Subject: …&#10;&#10;corpo do email">{{ texto or '' }}</textarea>
+        <span class="field__hint">
+          Aceita o <code>.eml</code> inteiro, só a parte HTML, ou só texto. Se
+          colar HTML sem cabeçalhos, as regras de cabeçalho ficam marcadas como
+          não aplicáveis em vez de falhar.
+        </span>
+      </label>
+
+      <div class="actions">
+        <button type="submit" class="btn btn--primary">Analisar</button>
+        <button type="button" class="btn btn--secondary" id="usar-exemplo">
+          Colar um exemplo
+        </button>
+        {% if tem_resultado %}
+        <a class="btn btn--secondary" href="{{ raiz }}/analisar">Limpar</a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+
+  {% if tem_resultado and relatorio %}
+  <div class="stack">
+    <div class="score" data-nivel="{{ relatorio.categoria }}" aria-live="polite">
+      <div class="score__head">
+        <div>
+          <div class="muted small">Risco de spam estimado</div>
+          <div class="score__value">{{ relatorio.score }}<span
+            class="score__denom"> / 100</span></div>
+        </div>
+        <div class="ta-right">
+          <span class="score__badge">{{ relatorio.categoria_acentuada }}</span>
+          <div class="score__marker" aria-hidden="true">
+            {% if relatorio.categoria == 'SEGURO' %}[OK]
+            {% elif relatorio.categoria == 'ATENCAO' %}[!]
+            {% elif relatorio.categoria == 'ELEVADO' %}[!!]
+            {% else %}[X]{% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="score__bar">
+        <div class="score__fill" data-score="{{ relatorio.score }}"></div>
+      </div>
+
+      <p class="small"><strong>{{ relatorio.veredito }}</strong></p>
+
+      <details class="disclosure mt-1">
+        <summary>Quem diz ter enviado</summary>
+        <dl class="stack small m-0">
+          <div><dt class="muted">From</dt><dd class="mono m-0">{{ relatorio.resumo_email.de }}</dd></div>
+          <div><dt class="muted">Assunto</dt><dd class="m-0">{{ relatorio.resumo_email.assunto }}</dd></div>
+          <div><dt class="muted">Para</dt><dd class="mono m-0">{{ relatorio.resumo_email.para }}</dd></div>
+          <div>
+            <dt class="muted">Conteúdo</dt>
+            <dd class="m-0">
+              {% if relatorio.resumo_email.tem_html %}
+                {{ relatorio.resumo_email.caracteres_visiveis }} caracteres visíveis,
+              {% endif %}
+              {{ relatorio.resumo_email.ligacoes }} ligação(ões),
+              {{ relatorio.resumo_email.imagens }} imagem(ns),
+              {% if relatorio.resumo_email.tem_html and relatorio.resumo_email.tem_texto %}
+                com alternativa em texto simples
+              {% elif relatorio.resumo_email.tem_html %}
+                só HTML
+              {% else %}
+                só texto simples
+              {% endif %}
+            </dd>
+          </div>
+          {% if relatorio.resumo_email.anexos %}
+          <div>
+            <dt class="muted">Anexos</dt>
+            <dd class="mono m-0">{{ relatorio.resumo_email.anexos | join(', ') }}</dd>
+          </div>
+          {% endif %}
+        </dl>
+      </details>
+
+      <details class="disclosure">
+        <summary>O que este score não é</summary>
+        <p class="small mb-2 m-0">{{ relatorio.aviso }}</p>
+        <p class="small m-0">{{ relatorio.como_usar }}</p>
+      </details>
+    </div>
+
+    {% if relatorio.notas_leitura %}
+    <div class="notice notice--aviso">
+      <strong>Notas de leitura</strong>
+      <ul>
+        {% for nota in relatorio.notas_leitura %}<li>{{ nota }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% for cat in relatorio.categorias %}
+    <div class="card">
+      <div class="card__title">
+        <h2 class="m-0">{{ cat.categoria | capitalize }}</h2>
+        {% if cat.pontos > 0 %}
+        <span class="pill pill--warn">+{{ cat.pontos }}</span>
+        {% elif cat.pontos < 0 %}
+        <span class="pill pill--ok">{{ cat.pontos }}</span>
+        {% else %}
+        <span class="pill">0</span>
+        {% endif %}
+      </div>
+      <p class="muted small">{{ cat.descricao }}</p>
+
+      {% if cat.regras %}
+      <ul class="findings">
+        {% for r in cat.regras %}
+        <li>
+          <span class="finding__points">{{ '%+d' | format(r.pontos) }}</span>
+          <span class="finding__rule">{{ r.regra }}</span>
+          {{ r.mensagem }}
+          {% if r.remediacao %}
+          <span class="finding__fix">{{ r.remediacao }}</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="small muted m-0">Nada assinalado nesta categoria.</p>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="card">
+    <h2>O que este ecrã procura</h2>
+    <p class="muted small">
+      Os sinais que se veem sem abrir o email, e os que só se vêem depois de o
+      abrir. Nenhum deles é uma prova.
+    </p>
+    <ul class="small">
+      <li><strong>Cabeçalhos</strong> — quem diz ter enviado, para quem, e se os
+        domínios concordam entre si.</li>
+      <li><strong>Texto</strong> — assunto, urgência, e a pressão para agir
+        depressa.</li>
+      <li><strong>HTML</strong> — scripts, texto escondido, CSS suspeito.</li>
+      <li><strong>Ligações</strong> — quantas, para que domínios, e se há
+        encurtadores.</li>
+      <li><strong>Imagens</strong> — pixels de rastreio, e a relação com o
+        texto.</li>
+      <li><strong>Estrutura</strong> — tamanho, anexos, partes sem
+        conteúdo.</li>
+    </ul>
+    <p class="small muted">
+      Os pesos são diferentes dos da assinatura, e é de propósito. Uma
+      assinatura com seis ligações é um sinal; um email com seis ligações é um
+      email normal.
+    </p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ raiz }}/static/app.js" defer></script>
+{% endblock %}

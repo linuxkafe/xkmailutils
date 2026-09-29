@@ -1,4 +1,15 @@
 node_modules/
+
+# Segredos. `var/` tem a base de dados SQLite e os logótipos carregados
+# pelos utilizadores — nunca vai para o controlo de versões.
+.env
+.env.*
+!.env.example
+var/
+*.db
+*.db-wal
+*.db-shm
+
 __pycache__/
 *.pyc
 .coverage
@@ -16,3 +27,6 @@ env/
 .tmp/
 aes/verification/
 .llm_venv/
+.pytest_cache/
+.ruff_cache/
+htmlcov/

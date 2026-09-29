@@ -1,0 +1,75 @@
+{#
+  Base de todas as páginas.
+
+  Duas decisões que valem a pena explicar:
+
+  1. O tema é escrito no `<html>` a partir do cookie do servidor. Um script no
+     `<head>` que lê `localStorage` e troca a classe depois do primeiro paint
+     produz um flash de tema errado — e a alternativa (ler do servidor) exige
+     que o cookie seja sempre escrito antes da resposta, que é o que o
+     middleware em `main.py` faz.
+
+  2. Cabeçalho e rodapé têm a mesma classe de cor (`.site-header` /
+     `.site-footer` → `var(--chrome)`). É o requisito FR-5.1, e a igualdade
+     está escrita uma vez, no CSS, não repetida em dois sítios que podem
+     divergir.
+#}<!doctype html>
+<html lang="pt-PT" data-tema="{{ tema }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}mailutils{% endblock %}</title>
+  <link rel="stylesheet" href="{{ raiz }}/static/app.css">
+  <link rel="icon" href="data:,">
+</head>
+<!-- `data-raiz` é a forma de o JavaScript saber o prefixo sem o ter de
+     adivinhar. Sem isto, cada `fetch()` no editor precisa de um segundo
+     lugar onde o prefixo está escrito, e os dois divergem. -->
+<body data-raiz="{{ raiz }}">
+<a class="visually-hidden" href="#conteudo">Saltar para o conteúdo</a>
+
+<header class="site-header">
+  <div class="site-header__inner">
+    <a class="brand" href="{{ raiz }}/">
+      <span class="brand__mark" aria-hidden="true">mu</span>
+      <span>mailutils</span>
+    </a>
+    {% if sessao %}
+    <nav class="nav" aria-label="Navegação principal">
+      <a href="{{ raiz }}/assinatura" {% if rota == (raiz + '/assinatura') %}aria-current="page"{% endif %}>Assinatura</a>
+      <a href="{{ raiz }}/analisar" {% if rota == (raiz + '/analisar') %}aria-current="page"{% endif %}>Analisar email</a>
+      <a href="{{ raiz }}/dispositivos" {% if rota == (raiz + '/dispositivos') %}aria-current="page"{% endif %}>Dispositivos</a>
+      <a href="{{ raiz }}/perfil" {% if rota == (raiz + '/perfil') %}aria-current="page"{% endif %}>Perfil</a>
+      {% if sessao.is_admin %}
+      <a href="{{ raiz }}/admin" {% if rota == (raiz + '/admin') %}aria-current="page"{% endif %}>Administração</a>
+      {% endif %}
+      <form method="post" action="{{ raiz }}/sair" class="actions">
+        <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
+        <button type="submit" class="btn btn--sm btn--secondary">Sair</button>
+      </form>
+    </nav>
+    {% else %}
+    <nav class="nav" aria-label="Navegação principal">
+      <a href="{{ raiz }}/entrar">Entrar</a>
+    </nav>
+    {% endif %}
+  </div>
+</header>
+
+<main class="shell" id="conteudo">
+  {% block conteudo %}{% endblock %}
+</main>
+
+<footer class="site-footer">
+  <div class="site-footer__inner">
+    <span>mailutils — assinaturas que não parecem spam, e emails que se percebem.</span>
+    <span>
+      Self-hosted. Sem telemetria.
+      <a href="{{ raiz }}/saude">Estado do serviço</a>
+    </span>
+  </div>
+</footer>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

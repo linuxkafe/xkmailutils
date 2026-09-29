@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block titulo %}Perfil — mailutils{% endblock %}
+
+{% block conteudo %}
+<h1>Perfil</h1>
+
+{% if erro_chave == 'atual-incorrecta' %}
+<div class="notice notice--erro" role="alert">A palavra-passe actual está incorrecta.</div>
+{% elif erro_chave == 'nao-coincidem' %}
+<div class="notice notice--erro" role="alert">As palavras-passe novas não coincidem.</div>
+{% elif erro %}
+<div class="notice notice--erro" role="alert">{{ erro }}</div>
+{% endif %}
+{% if aviso_chave == 'alterada' %}
+<div class="notice notice--ok" role="status">
+  Palavra-passe alterada. As outras sessões foram fechadas — entre outra vez.
+</div>
+{% endif %}
+
+<div class="grid grid--split">
+  <div class="card">
+    <div class="card__title">
+      <h2 class="m-0">Conta</h2>
+    </div>
+    <dl class="stack">
+      <div>
+        <dt class="muted small">Email</dt>
+        <dd class="mono mt-xs">{{ sessao.email }}</dd>
+      </div>
+      <div>
+        <dt class="muted small">Papel</dt>
+        <dd class="mt-xs">
+          {% if sessao.is_admin %}
+            <span class="pill pill--warn">administrador</span>
+          {% else %}
+            <span class="pill">utilizador</span>
+          {% endif %}
+        </dd>
+      </div>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h2>Alterar a palavra-passe</h2>
+    <p class="muted small">
+      Ao alterar a palavra-passe, todas as outras sessões são fechadas.
+    </p>
+    <form method="post" action="{{ raiz }}/perfil/password" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
+
+      <label class="field" for="current">
+        <span class="field__label">Palavra-passe actual</span>
+        <input type="password" id="current" name="current" required
+               autocomplete="current-password">
+      </label>
+
+      <div class="row row--2">
+        <label class="field" for="new">
+          <span class="field__label">Nova palavra-passe</span>
+          <input type="password" id="new" name="new" required minlength="12"
+                 autocomplete="new-password">
+        </label>
+        <label class="field" for="new2">
+          <span class="field__label">Repetir</span>
+          <input type="password" id="new2" name="new2" required minlength="12"
+                 autocomplete="new-password">
+        </label>
+      </div>
+
+      <div class="actions">
+        <button type="submit" class="btn btn--primary">Alterar</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

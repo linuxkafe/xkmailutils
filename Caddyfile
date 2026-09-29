@@ -1,0 +1,40 @@
+# Caddyfile — proxy inverso para o xkmailutils.
+#
+# Duas funções e nada mais:
+#
+# 1. Terminar TLS sozinho. O Caddy pede certificado por ACME na primeira
+#    arranquada e renova-o sem ninguém pedir. Não há certbot, não há chave
+#    guardada à mão, não há cron de renovação.
+# 2. Respeitar o prefixo `/xkmailutils`. O `uri strip_prefix` **não** é usado
+#    de propósito: a aplicação regista as rotas já com o prefixo, e fazer
+#    stripping aqui daria a cada URL um prefixo duplo. O proxy é transparente.
+#
+# A porta 8080 do host continua a existir para quem não quer usar isto. As duas
+# formas de aceder são legítimas e não se atrapalam.
+
+{$XKMAILUTILS_DOMINIO} {
+	encode zstd gzip
+
+	# Cabeçalhos de segurança que a aplicação já põe, repetidos aqui para o
+	# caso de o proxy estar a terminar a resposta antes de a aplicação a ver.
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+
+	# O proxy tem de dizer à aplicação qual era o esquema e o host originais.
+	# Sem isto, a aplicação gera URLs de convite e de imagem com `http://` e
+	# com `127.0.0.1:8000`, que não são endereços válidos lá fora.
+	reverse_proxy mailutils:8000 {
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		header_up X-Real-IP {remote_host}
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

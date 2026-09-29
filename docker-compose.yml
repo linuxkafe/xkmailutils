@@ -1,0 +1,95 @@
+# xkmailutils — deploy de um serviço, num comando, sem configurar vhost.
+#
+# A aplicação serve-se a si mesma em http://HOST:8080/xkmailutils. Não há
+# nginx, não há Apache, não há certificado, não há `sites-available`. É a
+# diferença entre "instalar isto" e "seguir um tutorial de meia hora".
+#
+# O que o preço é, e está escrito aqui e no README: a URL da imagem do logótipo
+# vai sair por `http://`, e o próprio mailutils penaliza isso no score de spam
+# (regra INSECURE_URL). A imagem é servida — a app funciona toda —, mas
+# vários clientes de email não carregam imagens http. Se precisar de https, há
+# um bloco opcional no compose com Caddy, que obtém certificado sozinho e
+# continua a não exigir edição de vhost. Ver README, secção "TLS opcional".
+
+services:
+  mailutils:
+    build: .
+    image: linuxkafe/xkmailutils:latest
+    container_name: xkmailutils
+    restart: unless-stopped
+
+    # Bind a `127.0.0.1` de propósito: a aplicação responde a `/saude`, que
+    # devolve o número de utilizadores, e esse número não é público. A exposição
+    # ao exterior é uma decisão de quem instala, e é uma linha.
+    ports:
+      - "127.0.0.1:${XKMAILUTILS_PORTA:-8080}:8000"
+
+    env_file:
+      - .env
+    environment:
+      # Sobrescreve o `.env` para o contentor usar sempre o prefixo e o volume
+      # correctos, independentemente do que esteja escrito lá dentro. Um `.env`
+      # copiado da máquina de desenvolvimento apontaria para caminhos que não
+      # existem no contentor.
+      MAILUTILS_PATH_PREFIX: "${MAILUTILS_PATH_PREFIX:-/xkmailutils}"
+      MAILUTILS_DB_PATH: /data/mailutils.db
+      MAILUTILS_MEDIA_DIR: /data/media
+      MAILUTILS_ENV: "${MAILUTILS_ENV:-production}"
+
+    volumes:
+      - dados:/data
+
+    # Contentor de sistema de ficheiros onde só se pode escrever. A aplicação
+    # escreve em `/data` (volume) e o Python precisa de temporários em `/tmp`.
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ------------------------------------------------------------------ TLS ---
+  #
+  # Perfil opcional. Arrancar com TLS:
+  #
+  #     docker compose --profile tls up -d
+  #
+  # Exige portas 80 e 443 livres no host, e um nome de domínio que aponte para
+  # a máquina. O Caddy obtém e renova o certificado por ACME sem intervention:
+  # não há certbot, não há chave a guardar, não há cron.
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: xkmailutils-caddy
+    profiles: ["tls"]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # `XKMAILUTILS_DOMINIO` tem de bater certo com `MAILUTILS_PUBLIC_BASE_URL`
+      # no `.env`. Não é declarado como obrigatório (`:?`) de propósito: o
+      # compose interpola as variáveis de *todos* os serviços antes de olhar
+      # para os perfis, e um `:?` aqui fazia `docker compose up` — sem TLS —
+      # falhar com um erro que não tem nada a ver com o que se pediu.
+      # O `deploy.sh` valida a variável antes de arrancar com o perfil.
+      XKMAILUTILS_DOMINIO: "${XKMAILUTILS_DOMINIO:-}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - mailutils
+
+volumes:
+  dados:
+  caddy-data:
+  caddy-config:

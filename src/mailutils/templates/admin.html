@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block titulo %}Administração — mailutils{% endblock %}
+
+{% block conteudo %}
+<h1>Administração</h1>
+
+{% if erro_chave == 'csrf' %}
+<div class="notice notice--erro" role="alert">Sessão expirada. Recarregue a página.</div>
+{% elif erro_chave == 'envio' %}
+<div class="notice notice--erro" role="alert">
+  O convite foi criado mas o email não saiu. Verifique o servidor SMTP e
+  convide de novo.
+</div>
+{% elif erro_chave == 'auto' %}
+<div class="notice notice--erro" role="alert">
+  Não pode desactivar a sua própria conta. Sem outro administrador, a
+  instalação ficava sem ninguém que a administrasse.
+</div>
+{% elif erro_chave == 'inexistente' %}
+<div class="notice notice--erro" role="alert">Utilizador inexistente.</div>
+{% elif erro %}
+<div class="notice notice--erro" role="alert">{{ erro }}</div>
+{% endif %}
+{% if aviso %}
+<div class="notice notice--ok" role="status">{{ aviso }}</div>
+{% endif %}
+
+<div class="grid grid--split">
+  <div class="card">
+    <h2>Utilizadores</h2>
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th scope="col">Email</th>
+            <th scope="col">Papel</th>
+            <th scope="col">Estado</th>
+            <th scope="col"><span class="visually-hidden">Acções</span></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for u in utilizadores %}
+          <tr>
+            <td class="mono">{{ u.email }}</td>
+            <td>
+              {% if u.admin %}<span class="pill pill--warn">admin</span>
+              {% else %}<span class="pill">utilizador</span>{% endif %}
+            </td>
+            <td>
+              {% if u.ativo %}<span class="pill pill--ok">activo</span>
+              {% else %}<span class="pill pill--bad">desactivado</span>{% endif %}
+            </td>
+            <td>
+              {% if u.id != sessao.user_id %}
+              <form method="post" action="{{ raiz }}/admin/utilizadores/{{ u.id }}/estado">
+                <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
+                <button type="submit"
+                        class="btn btn--sm {% if u.ativo %}btn--danger{% else %}btn--secondary{% endif %}">
+                  {% if u.ativo %}Desactivar{% else %}Reactivar{% endif %}
+                </button>
+              </form>
+              {% else %}
+              <span class="muted small">a si</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Convidar utilizador</h2>
+    <p class="muted small">
+      O utilizador recebe um link e define a sua própria palavra-passe. Você
+      nunca vê essa palavra-passe.
+    </p>
+    <form method="post" action="{{ raiz }}/admin/convites">
+      <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
+      <label class="field" for="convite-email">
+        <span class="field__label">Email</span>
+        <input type="email" id="convite-email" name="email" required maxlength="254"
+               inputmode="email">
+        <span class="field__hint">
+          O convite expira em {{ settings.invite_ttl_hours }} horas.
+        </span>
+      </label>
+      <div class="actions">
+        <button type="submit" class="btn btn--primary">Enviar convite</button>
+      </div>
+    </form>
+
+    <h3 class="mt-5">Convites</h3>
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th scope="col">Email</th>
+            <th scope="col">Estado</th>
+            <th scope="col"><span class="visually-hidden">Acções</span></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for c in convites %}
+          <tr>
+            <td class="mono">{{ c.email }}</td>
+            <td>
+              {% if c.estado == 'pendente' %}<span class="pill pill--warn">pendente</span>
+              {% elif c.estado == 'aceite' %}<span class="pill pill--ok">aceite</span>
+              {% else %}<span class="pill">{{ c.estado }}</span>{% endif %}
+            </td>
+            <td>
+              {% if c.estado == 'pendente' %}
+              <form method="post" action="{{ raiz }}/admin/convites/{{ c.id }}/revogar">
+                <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
+                <button type="submit" class="btn btn--sm btn--danger">Revogar</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3" class="muted">Nenhum convite.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

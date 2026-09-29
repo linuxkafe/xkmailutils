@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block titulo %}Aceitar convite — mailutils{% endblock %}
+
+{% block conteudo %}
+<div class="centered-page">
+  <div class="card card--raised">
+    {% if not valido %}
+    <h1>Convite indisponível</h1>
+    <div class="notice notice--erro" role="alert">
+      {% if erro_chave == 'convite' %}
+        Este convite já foi usado, foi revogado ou expirou. Peça um novo ao
+        administrador da instalação.
+      {% else %}
+        {{ erro }}
+      {% endif %}
+    {% endif %}
+    {%- if not valido %}
+    </div>
+    <a href="{{ raiz }}/entrar" class="btn btn--secondary">Ir para o início de sessão</a>
+    {% else %}
+    <h1>Definir a sua palavra-passe</h1>
+    <p class="muted small">
+      Conta: <strong>{{ email }}</strong>. A palavra-passe é sua — o
+      administrador não a vê nem a recebe.
+    </p>
+
+    {% if erro %}
+    <div class="notice notice--erro" role="alert">{{ erro }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ raiz }}/convite/{{ token }}" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+
+      <label class="field" for="password">
+        <span class="field__label">Palavra-passe</span>
+        <input type="password" id="password" name="password" required
+               minlength="12" autocomplete="new-password">
+        <span class="field__hint">
+          Mínimo 12 caracteres. Comprimento conta mais do que símbolos.
+        </span>
+      </label>
+
+      <label class="field" for="password2">
+        <span class="field__label">Repetir a palavra-passe</span>
+        <input type="password" id="password2" name="password2" required
+               minlength="12" autocomplete="new-password">
+      </label>
+
+      <div class="actions">
+        <button type="submit" class="btn btn--primary">Criar conta</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

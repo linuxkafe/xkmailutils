@@ -1,0 +1,905 @@
+/* mailutils — folha de estilo única.
+ *
+ * Invariante do requisito FR-5.1: em darkmode, o fundo do cabeçalho e o do
+ * rodapé são o mesmo token (--chrome). Não há gradiente, não há tom distinto.
+ * O teste tests/test_ui_theme.py falha se algum deles divergir.
+ *
+ * Paleta derivada de LINUXKAFE-wp-theme (style.css e plugin xkaichat).
+ * Zero menções institucionais em qualquer ficheiro — requisito explícito do
+ * dono do projecto, verificado por tests/test_ui_theme.py.
+ */
+
+:root {
+  --brand-yellow: #f8b400;
+  --brand-yellow-dark: #e6a500;
+  --brand-yellow-light: #ffc433;
+  --link: #0056b3;
+
+  /* Cores funcionais, em dois papéis.
+   *
+   * `--*-fill` é a cor viva: barras, fundos, bordas. Usa os hexes da marca,
+   * porque ali não há texto e o contraste não se aplica.
+   *
+   * `--*-text` é a cor com que o texto é escrito. Tem de passar 4.5:1 sobre o
+   * fundo do tema, e o hexe da marca não passa: `#22c55e` sobre branco dá
+   * 2.28:1. Por isso são variantes mais escuras. Este era um defeito real —
+   * o `DESIGN.md` proibia explicitamente verde da marca como texto e o CSS
+   * usava-o na barra de score.
+   */
+  --ok-fill: #22c55e;
+  --warn-fill: #f8b400;
+  --high-fill: #f97316;
+  --bad-fill: #ef4444;
+  --info-fill: #3b82f6;
+  --ok-text: #166534;
+  --warn-text: #854d0e;
+  --high-text: #c2410c;
+  --bad-text: #b91c1c;
+  --info-text: #1d4ed8;
+
+  --font: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Fira Code", "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 16px;
+  --sp-4: 24px;
+  --sp-5: 32px;
+  --sp-6: 48px;
+  --sp-7: 64px;
+
+  --r-sm: 4px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-full: 9999px;
+
+  --t-fast: 150ms ease-out;
+  --t-normal: 250ms ease-out;
+}
+
+/* ------------------------------------------------------------- utilitarios --
+ *
+ * Substituem os atributos `style=""` que os templates usavam e que a
+ * `Content-Security-Policy` bloqueia (`style-src 'self'`): em navegador, tudo
+ * o que estava inline era descartado, e o `app.css` ficava a descrever um
+ * ecrã que ninguém via. Os nomes são utilitários porque quase todos os usos são
+ * uma margem e não um componente; onde há um componente, há uma classe.
+ *
+ * `tests/test_browser_regressions.py` falha se um `style=""` voltar a aparecer.
+ */
+.m-0 { margin: 0; }
+.mb-0 { margin-bottom: 0; }
+.mt-xs { margin-top: 2px; }        /* fora da escala de 4px, como no original */
+.mt-1 { margin-top: var(--sp-2); } /* 8px */
+.mt-2 { margin-top: 12px; }        /* não há token para 12px */
+.mt-3 { margin-top: var(--sp-3); } /* 16px */
+.mt-4 { margin-top: var(--sp-4); } /* 24px */
+.mt-5 { margin-top: var(--sp-5); } /* 32px */
+.mt-1-b { margin-top: var(--sp-2); margin-bottom: var(--sp-2); }
+.ma-2 { margin: 12px 0 0; }
+.ma-3 { margin: var(--sp-3) 0 0; }
+.ma-3-b { margin: var(--sp-3) 0 var(--sp-2); }
+.mb-2 { margin-bottom: var(--sp-2); }
+.ta-right { text-align: right; }
+.ta-center { text-align: center; }
+.w-full { width: 100%; }
+.hidden { display: none; }
+
+/* O denominador " / 100" é menor e menos pesado do que o número ao lado. */
+.score__denom {
+  font-size: 0.9rem;
+  font-weight: 400;
+}
+
+/* A moldura do preview e a miniatura do logótipo, para o utilizador ver
+ * claramente que o que está lá dentro é uma imagem. */
+.preview__frame {
+  width: 100%;
+  height: 200px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: #fff;
+}
+
+.logo__thumb {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2);
+  background: #fff;
+}
+
+/* O código do segundo factor: monoespaçado, grande, com espaçamento entre
+ * dígitos. Um código de 6 algarismos colado de um email tem de se ler. */
+.otp-code {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  letter-spacing: 0.5em;
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------- light -- */
+:root,
+[data-tema="light"] {
+  --bg: #ffffff;
+  --bg-alt: #f5f5f5;
+  --surface: #f5f5f5;
+  --surface-elevated: #ffffff;
+  --chrome: #2d2d2d;
+  --chrome-sticky: #1a1a1a;
+  --text: #212121;
+  --text-soft: #555555;
+  --text-on-chrome: #e0e0e0;
+  --border: #e0e0e0;
+  --border-strong: #767676;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.15);
+}
+
+/* ----------------------------------------------------------------- dark -- */
+[data-tema="dark"] {
+  --bg: #121212;
+  --bg-alt: #171717;
+  --surface: #1e1e1e;
+  --surface-elevated: #262626;
+  --chrome: #1a1a1a;
+  --chrome-sticky: #141414;
+  --text: #e8e8e8;
+  --text-soft: #a3a3a3;
+  --text-on-chrome: #d4d4d4;
+  --border: #333333;
+  --border-strong: #6b6b6b;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
+
+  /* Variantes claras: sobre fundo escuro, o hexe da marca até passaria, mas
+   * o texto tem de continuar legível se o fundo mudar. */
+  --ok-text: #4ade80;
+  --warn-text: #fcd34d;
+  --high-text: #fb923c;
+  --bad-text: #fca5a5;
+  --info-text: #93c5fd;
+}
+
+/* ----------------------------------------------------------------- base -- */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font);
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.55;
+}
+
+/* A app funciona sem JavaScript. `display: none` sem `no-js` é o inverso do
+ * que se quer: sem JS, o conteúdo tem de continuar visível. */
+.no-js-only {
+  display: none;
+}
+
+a {
+  color: var(--link);
+}
+
+[data-tema="dark"] a {
+  color: var(--brand-yellow-light);
+}
+
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--brand-yellow);
+  outline-offset: 2px;
+}
+
+h1, h2, h3 {
+  margin: 0 0 var(--sp-3);
+  line-height: 1.25;
+  font-weight: 600;
+}
+
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.25rem; }
+h3 { font-size: 1.125rem; }
+
+p { margin: 0 0 var(--sp-3); }
+
+/* -------------------------------------------------------------- chrome --- */
+/* Cabeçalho e rodapé partilham `--chrome`. É a razão de existirem como
+ * classes separadas: para que a regra seja escrita duas vezes e a igualdade
+ * seja visível no CSS, não implícita. */
+.site-header,
+.site-footer {
+  background: var(--chrome);
+  color: var(--text-on-chrome);
+}
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.site-header__inner,
+.site-footer__inner,
+.shell {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 var(--sp-3);
+}
+
+.site-header__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 60px;
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--text-on-chrome);
+  text-decoration: none;
+  letter-spacing: -0.01em;
+}
+
+.brand__mark {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  background: var(--brand-yellow);
+  color: #212121;
+  display: grid;
+  place-items: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex: none;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.nav a {
+  color: var(--text-on-chrome);
+  text-decoration: none;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  font-size: 0.9rem;
+}
+
+.nav a:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.nav a[aria-current="page"] {
+  background: var(--brand-yellow);
+  color: #212121;
+  font-weight: 600;
+}
+
+.site-footer {
+  margin-top: auto;
+  border-top: 1px solid var(--border-strong);
+}
+
+.site-footer__inner {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding-top: var(--sp-4);
+  padding-bottom: var(--sp-4);
+  font-size: 0.85rem;
+  color: var(--text-on-chrome);
+}
+
+.site-footer a {
+  color: var(--text-on-chrome);
+  text-decoration: underline;
+}
+
+.shell {
+  flex: 1 1 auto;
+  padding-top: var(--sp-5);
+  padding-bottom: var(--sp-6);
+}
+
+/* -------------------------------------------------------------- layout --- */
+.grid {
+  display: grid;
+  gap: var(--sp-4);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 1024px) {
+  .grid--split {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.stack > * + * {
+  margin-top: var(--sp-3);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+}
+
+.card--raised {
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow);
+}
+
+.card__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+.muted {
+  color: var(--text-soft);
+}
+
+.small {
+  font-size: 0.85rem;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+
+/* --------------------------------------------------------------- forms --- */
+.field {
+  display: block;
+  margin-bottom: var(--sp-3);
+}
+
+.field__label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-bottom: var(--sp-1);
+  color: var(--text);
+}
+
+.field__hint {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text-soft);
+  margin-top: var(--sp-1);
+}
+
+input[type="text"],
+input[type="email"],
+input[type="url"],
+input[type="tel"],
+input[type="password"],
+input[type="file"],
+select,
+textarea {
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+}
+
+input[type="file"] {
+  padding: var(--sp-2);
+}
+
+textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--brand-yellow);
+}
+
+.row {
+  display: grid;
+  gap: var(--sp-3);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 768px) {
+  .row--2 { grid-template-columns: 1fr 1fr; }
+  .row--3 { grid-template-columns: repeat(3, 1fr); }
+}
+
+/* -------------------------------------------------------------- botaos --- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  min-height: 40px;
+  font: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background var(--t-fast), border-color var(--t-fast);
+}
+
+.btn--primary {
+  background: var(--brand-yellow);
+  color: #212121;
+}
+
+.btn--primary:hover {
+  background: var(--brand-yellow-dark);
+}
+
+.btn--secondary {
+  background: transparent;
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.btn--secondary:hover {
+  border-color: var(--brand-yellow);
+}
+
+.btn--danger {
+  background: transparent;
+  color: var(--bad-text);
+  border-color: var(--bad-fill);
+}
+
+.btn--sm {
+  min-height: 32px;
+  padding: var(--sp-1) var(--sp-3);
+  font-size: 0.85rem;
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ------------------------------------------------------------- score ----- */
+.score {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--sp-3);
+  background: var(--bg-alt);
+}
+
+.score__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.score__value {
+  font-family: var(--font-mono);
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.score__bar {
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--border);
+  overflow: hidden;
+  margin-bottom: var(--sp-2);
+}
+
+.score__fill {
+  height: 100%;
+  border-radius: var(--r-full);
+  transition: width var(--t-normal);
+  /* Zero por omissão, e não "auto". Sem `width`, um `div` enche a barra
+   * inteira: um score sem regra correspondente seria um 100% — que é como uma
+   * assinatura limpa se mostrava com a barra no máximo. Um valor desconhecido
+   * mostra uma barra vazia, que é a mentira menor. */
+  width: 0;
+}
+
+/* A largura da barra é a única coisa que o CSS não consegue expressar a partir
+ * de um valor do servidor, porque `attr()` não devolve percentagens
+ * (medido: `width: attr(data-score number)%` dá sempre a largura do contentor).
+ * E `style=""` está bloqueado pela CSP, de propósito.
+ *
+ * Como o score é um inteiro de 0 a 100 (`spam.py:43` e `spam.py:280`), a
+ * tabela abaixo é finita e verificável. `tests/test_ui_theme.py` garante que
+ * cobre os 101 valores: se um dia o score passar a fraccionário, esse teste
+ * falha em vez de a barra passar a mentir. */
+
+.score[data-nivel="SEGURO"] .score__fill { background: var(--ok-fill); }
+.score[data-nivel="SEGURO"] .score__value { color: var(--ok-text); }
+.score[data-nivel="ATENCAO"] .score__fill { background: var(--warn-fill); }
+.score[data-nivel="ATENCAO"] .score__value { color: var(--warn-text); }
+.score[data-nivel="ELEVADO"] .score__fill { background: var(--high-fill); }
+.score[data-nivel="ELEVADO"] .score__value { color: var(--high-text); }
+.score[data-nivel="CRITICO"] .score__fill { background: var(--bad-fill); }
+.score[data-nivel="CRITICO"] .score__value { color: var(--bad-text); }
+
+/* ---------------------------------------------------------------- barra -- */
+
+.score__fill[data-score="0"] { width: 0%; }
+.score__fill[data-score="1"] { width: 1%; }
+.score__fill[data-score="2"] { width: 2%; }
+.score__fill[data-score="3"] { width: 3%; }
+.score__fill[data-score="4"] { width: 4%; }
+.score__fill[data-score="5"] { width: 5%; }
+.score__fill[data-score="6"] { width: 6%; }
+.score__fill[data-score="7"] { width: 7%; }
+.score__fill[data-score="8"] { width: 8%; }
+.score__fill[data-score="9"] { width: 9%; }
+.score__fill[data-score="10"] { width: 10%; }
+.score__fill[data-score="11"] { width: 11%; }
+.score__fill[data-score="12"] { width: 12%; }
+.score__fill[data-score="13"] { width: 13%; }
+.score__fill[data-score="14"] { width: 14%; }
+.score__fill[data-score="15"] { width: 15%; }
+.score__fill[data-score="16"] { width: 16%; }
+.score__fill[data-score="17"] { width: 17%; }
+.score__fill[data-score="18"] { width: 18%; }
+.score__fill[data-score="19"] { width: 19%; }
+.score__fill[data-score="20"] { width: 20%; }
+.score__fill[data-score="21"] { width: 21%; }
+.score__fill[data-score="22"] { width: 22%; }
+.score__fill[data-score="23"] { width: 23%; }
+.score__fill[data-score="24"] { width: 24%; }
+.score__fill[data-score="25"] { width: 25%; }
+.score__fill[data-score="26"] { width: 26%; }
+.score__fill[data-score="27"] { width: 27%; }
+.score__fill[data-score="28"] { width: 28%; }
+.score__fill[data-score="29"] { width: 29%; }
+.score__fill[data-score="30"] { width: 30%; }
+.score__fill[data-score="31"] { width: 31%; }
+.score__fill[data-score="32"] { width: 32%; }
+.score__fill[data-score="33"] { width: 33%; }
+.score__fill[data-score="34"] { width: 34%; }
+.score__fill[data-score="35"] { width: 35%; }
+.score__fill[data-score="36"] { width: 36%; }
+.score__fill[data-score="37"] { width: 37%; }
+.score__fill[data-score="38"] { width: 38%; }
+.score__fill[data-score="39"] { width: 39%; }
+.score__fill[data-score="40"] { width: 40%; }
+.score__fill[data-score="41"] { width: 41%; }
+.score__fill[data-score="42"] { width: 42%; }
+.score__fill[data-score="43"] { width: 43%; }
+.score__fill[data-score="44"] { width: 44%; }
+.score__fill[data-score="45"] { width: 45%; }
+.score__fill[data-score="46"] { width: 46%; }
+.score__fill[data-score="47"] { width: 47%; }
+.score__fill[data-score="48"] { width: 48%; }
+.score__fill[data-score="49"] { width: 49%; }
+.score__fill[data-score="50"] { width: 50%; }
+.score__fill[data-score="51"] { width: 51%; }
+.score__fill[data-score="52"] { width: 52%; }
+.score__fill[data-score="53"] { width: 53%; }
+.score__fill[data-score="54"] { width: 54%; }
+.score__fill[data-score="55"] { width: 55%; }
+.score__fill[data-score="56"] { width: 56%; }
+.score__fill[data-score="57"] { width: 57%; }
+.score__fill[data-score="58"] { width: 58%; }
+.score__fill[data-score="59"] { width: 59%; }
+.score__fill[data-score="60"] { width: 60%; }
+.score__fill[data-score="61"] { width: 61%; }
+.score__fill[data-score="62"] { width: 62%; }
+.score__fill[data-score="63"] { width: 63%; }
+.score__fill[data-score="64"] { width: 64%; }
+.score__fill[data-score="65"] { width: 65%; }
+.score__fill[data-score="66"] { width: 66%; }
+.score__fill[data-score="67"] { width: 67%; }
+.score__fill[data-score="68"] { width: 68%; }
+.score__fill[data-score="69"] { width: 69%; }
+.score__fill[data-score="70"] { width: 70%; }
+.score__fill[data-score="71"] { width: 71%; }
+.score__fill[data-score="72"] { width: 72%; }
+.score__fill[data-score="73"] { width: 73%; }
+.score__fill[data-score="74"] { width: 74%; }
+.score__fill[data-score="75"] { width: 75%; }
+.score__fill[data-score="76"] { width: 76%; }
+.score__fill[data-score="77"] { width: 77%; }
+.score__fill[data-score="78"] { width: 78%; }
+.score__fill[data-score="79"] { width: 79%; }
+.score__fill[data-score="80"] { width: 80%; }
+.score__fill[data-score="81"] { width: 81%; }
+.score__fill[data-score="82"] { width: 82%; }
+.score__fill[data-score="83"] { width: 83%; }
+.score__fill[data-score="84"] { width: 84%; }
+.score__fill[data-score="85"] { width: 85%; }
+.score__fill[data-score="86"] { width: 86%; }
+.score__fill[data-score="87"] { width: 87%; }
+.score__fill[data-score="88"] { width: 88%; }
+.score__fill[data-score="89"] { width: 89%; }
+.score__fill[data-score="90"] { width: 90%; }
+.score__fill[data-score="91"] { width: 91%; }
+.score__fill[data-score="92"] { width: 92%; }
+.score__fill[data-score="93"] { width: 93%; }
+.score__fill[data-score="94"] { width: 94%; }
+.score__fill[data-score="95"] { width: 95%; }
+.score__fill[data-score="96"] { width: 96%; }
+.score__fill[data-score="97"] { width: 97%; }
+.score__fill[data-score="98"] { width: 98%; }
+.score__fill[data-score="99"] { width: 99%; }
+.score__fill[data-score="100"] { width: 100%; }
+
+.score__badge {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 700;
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-full);
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.score[data-nivel="SEGURO"] .score__badge { color: var(--ok-text); border-color: var(--ok-fill); }
+.score[data-nivel="ATENCAO"] .score__badge { color: var(--warn-text); border-color: var(--warn-fill); }
+.score[data-nivel="ELEVADO"] .score__badge { color: var(--high-text); border-color: var(--high-fill); }
+.score[data-nivel="CRITICO"] .score__badge { color: var(--bad-text); border-color: var(--bad-fill); }
+
+/* Rótulo textual + marcador. A cor nunca é a única pista (WCAG 1.4.1). */
+.score__marker {
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.findings {
+  list-style: none;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+}
+
+.findings li {
+  border-top: 1px solid var(--border);
+  padding: var(--sp-2) 0;
+  font-size: 0.87rem;
+}
+
+.findings li:first-child {
+  border-top: 0;
+}
+
+.finding__rule {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-soft);
+  display: block;
+}
+
+.finding__fix {
+  color: var(--text-soft);
+  display: block;
+  margin-top: 2px;
+}
+
+.finding__points {
+  float: right;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--text-soft);
+}
+
+.credit {
+  color: var(--text-soft);
+  font-size: 0.82rem;
+}
+
+/* ------------------------------------------------------------- avisos ---- */
+.notice {
+  border-radius: var(--r-sm);
+  padding: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  font-size: 0.9rem;
+}
+
+.notice--erro {
+  border-color: var(--bad-fill);
+  color: var(--bad-text);
+}
+
+.notice--ok {
+  border-color: var(--ok-fill);
+  color: var(--ok-text);
+}
+
+.notice--aviso {
+  border-color: var(--warn-fill);
+  color: var(--warn-text);
+}
+
+.notice--info {
+  border-color: var(--info-fill);
+  color: var(--info-text);
+}
+
+.notice ul {
+  margin: var(--sp-2) 0 0;
+  padding-left: var(--sp-4);
+}
+
+/* ------------------------------------------------------------- preview --- */
+.preview {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: var(--sp-4);
+  background: #ffffff;
+  color: #212121;
+  overflow-x: auto;
+  min-height: 120px;
+}
+
+.preview--light {
+  background: #ffffff;
+}
+
+.preview--dark {
+  background: #1a1a1a;
+  color: #e0e0e0;
+}
+
+.preview__empty {
+  color: var(--text-soft);
+  font-style: italic;
+}
+
+textarea.output {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  min-height: 220px;
+  white-space: pre;
+  overflow-wrap: normal;
+  overflow-x: auto;
+}
+
+/* -------------------------------------------------------------- table ---- */
+.table-wrap {
+  overflow-x: auto;
+}
+
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+table.data th,
+table.data td {
+  text-align: left;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+table.data th {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-soft);
+}
+
+.pill {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  padding: 1px var(--sp-2);
+  border-radius: var(--r-full);
+  border: 1px solid var(--border-strong);
+  color: var(--text-soft);
+}
+
+.pill--ok { color: var(--ok-text); border-color: var(--ok-fill); }
+.pill--warn { color: var(--warn-text); border-color: var(--warn-fill); }
+.pill--bad { color: var(--bad-text); border-color: var(--bad-fill); }
+
+details.disclosure {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-alt);
+}
+
+details.disclosure + details.disclosure {
+  margin-top: var(--sp-2);
+}
+
+details.disclosure summary {
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+details.disclosure > *:not(summary) {
+  margin-top: var(--sp-2);
+}
+
+.link-rows > * + * {
+  margin-top: var(--sp-2);
+}
+
+.centered-page {
+  max-width: 420px;
+  margin: 0 auto;
+  padding-top: var(--sp-6);
+}
+
+.code-display {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--text-soft);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

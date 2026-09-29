@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block titulo %}Verificar dispositivo — mailutils{% endblock %}
+
+{% block conteudo %}
+<div class="centered-page">
+  <div class="card card--raised">
+    <h1>Verificar o dispositivo</h1>
+
+    {% if erro %}
+    <div class="notice notice--erro" role="alert">{{ erro }}</div>
+    {% endif %}
+
+    {% if aviso %}
+    <div class="notice notice--aviso" role="status">{{ aviso }}</div>
+    {% endif %}
+
+    <p class="muted small">
+      Enviámos um código de 6 dígitos para o email desta conta. É válido durante
+      {{ settings.otp_ttl_minutes }} minutos e só pode ser usado uma vez.
+    </p>
+
+    <form method="post" action="{{ raiz }}/verificar" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+      <input type="hidden" name="challenge_id" value="{{ challenge_id }}">
+
+      <label class="field" for="code">
+        <span class="field__label">Código</span>
+        <input type="text" id="code" name="code" required
+               inputmode="numeric" pattern="[0-9]{6}" maxlength="6"
+               autocomplete="one-time-code" placeholder="000000"
+               class="otp-code">
+      </label>
+
+      <div class="actions">
+        <button type="submit" class="btn btn--primary">Verificar</button>
+        <a href="{{ raiz }}/entrar" class="btn btn--secondary">Voltar ao início</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

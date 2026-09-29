@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block titulo %}Dispositivos — mailutils{% endblock %}
+
+{% block conteudo %}
+<h1>Dispositivos</h1>
+<p class="muted small">
+  Estes são os dispositivos onde a palavra-passe basta. Noutro dispositivo, o
+  mailutils pede um código por email. Revogar um dispositivo fecha imediatamente
+  as sessões abertas nele.
+</p>
+
+{% if erro %}<div class="notice notice--erro" role="alert">{{ erro }}</div>{% endif %}
+{% if aviso_chave == 'revogado' %}
+<div class="notice notice--ok" role="status">Dispositivo revogado.</div>
+{% endif %}
+
+<div class="card">
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th scope="col">Cliente</th>
+          <th scope="col">Registado</th>
+          <th scope="col">Última utilização</th>
+          <th scope="col"><span class="visually-hidden">Acções</span></th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for d in dispositivos %}
+        <tr>
+          <td>
+            {{ d.label }}
+            {% if d.atual %}<span class="pill pill--ok">este dispositivo</span>{% endif %}
+          </td>
+          <td class="mono">{{ d.criado }}</td>
+          <td class="mono">{{ d.visto }}</td>
+          <td>
+            {% if not d.atual %}
+            <form method="post" action="{{ raiz }}/dispositivos/{{ d.id }}/revogar">
+              <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
+              <button type="submit" class="btn btn--sm btn--danger">Revogar</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td colspan="4" class="muted">Nenhum dispositivo registado.</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

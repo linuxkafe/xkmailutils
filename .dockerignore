@@ -1,0 +1,46 @@
+# Contexto de build mínimo.
+#
+# O objectivo é duplo:变小 a imagem, e não enviar o `.env` de ninguém para o
+# registo de contentores. Um `.env` num layer de build fica no histórico da
+# imagem para sempre, mesmo que uma camada posterior o apague.
+
+.git
+.github
+.aes
+aes/
+var/
+
+# Segredos. `.env.example` fica: é um modelo, sem valores.
+.env
+.env.*
+!.env.example
+
+# A licença e o README entram: `!README.md` desfaz o `*.md` abaixo.
+LICENSE
+
+# Testes e tooling: não são necessários para correr, e a imagem final nem
+# sequer os copia.
+tests/
+scripts/
+docs/templates/
+prompts/
+
+*.md
+!README.md
+!LICENSE
+
+# Ruído de desenvolvimento.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.db
+*.db-wal
+*.db-shm
+.vscode/
+.idea/
+*.log
+*.ts
