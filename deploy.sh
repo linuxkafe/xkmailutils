@@ -266,9 +266,75 @@ FIM
     chmod 600 "$RAIZ/.env"
 fi
 
+#: `--no-build` quando a imagem já foi construída à mão (ver o bloco do build).
+ARRANQUE=()
+
+# ------------------------------------------------------- pre-voo: DNS no build --
+#
+# O contentor de build precisa de resolver `pypi.org`, e o `git clone` deste
+# script **não** — corre no host. Num servidor com `systemd-resolved` (o
+# omisso em Debian e Ubuntu desde 2018) o host tem `nameserver 127.0.0.53`, e o
+# contentor herda essa linha. O stub só escuta no loopback do host, por isso lá
+# dentro não resolve: o `pip` falha com `Temporary failure in name resolution`
+# ao fim de quatro tentativas e mais de seis minutos de espera.
+#
+# Reproduzido, e as três saídas verificadas uma a uma:
+#
+#   docker run --rm --dns 127.0.0.53  <img>  getent hosts pypi.org   -> nao resolve
+#   docker run --rm --network=host    <img>  getent hosts pypi.org   -> resolve
+#   docker run --rm --dns 1.1.1.1     <img>  getent hosts pypi.org   -> resolve
+#
+# A correcção é `docker build --network=host`, e é só para o **build**: o
+# serviço em execução continua com o bind em `127.0.0.1` e o `ports` do compose.
+# O build só fala com o PyPI, e sem rede nenhuma de outra parte.
+
+IMAGEM_BUILD="${IMAGEM_BUILD:-python:3.12-slim-bookworm}"
+
+build_resolve_dns() {
+    docker run --rm --network=host "$IMAGEM_BUILD" \
+        getent hosts pypi.org >/dev/null 2>&1
+}
+
+build_sem_dns() {
+    docker run --rm "$IMAGEM_BUILD" getent hosts pypi.org >/dev/null 2>&1
+}
+
+dns_do_build() {
+    if build_sem_dns; then
+        return 0
+    fi
+    return 1
+}
+
 # ------------------------------------------------------------------ build --
 passo "A construir a imagem"
 cd "$RAIZ"
+
+# O contentor resolve nomes? Perguntar agora vale 6 minutos de espera depois.
+if dns_do_build; then
+    passo "O contentor resolve nomes. Build normal."
+else
+    aviso "o contentor de build não resolve nomes (o host tem, o contentor não)."
+    aviso "Isto é o systemd-resolved: o host tem 'nameserver 127.0.0.53' e o stub"
+    aviso "só escuta no host. O build vai com --network=host; o serviço não muda."
+    passo "A construir a imagem com a rede do host"
+    IMAGEM_COMPOSE="$(sed -n 's/^[[:space:]]*image:[[:space:]]*//p' docker-compose.yml | head -1)"
+    [ -n "$IMAGEM_COMPOSE" ] || falhar "não encontrei a tag da imagem em docker-compose.yml"
+    # `docker build` e não `docker compose build` de propósito: o `--network`
+    # é uma opção do `docker build`, e escrevê-lo no compose depende da
+    # versão do Compose aceitar essa chave. O `docker build` é o mesmo motor e
+    # aceita a opção em todas as versões.
+    if docker build --network=host --progress=plain -t "$IMAGEM_COMPOSE" . >"$RAIZ/.build.log" 2>&1
+    then
+        rm -f "$RAIZ/.build.log"
+    else
+        erro "a construção da imagem falhou mesmo com a rede do host. As últimas linhas:"
+        tail -n 30 "$RAIZ/.build.log" >&2 || true
+        falhar "o log completo está em $RAIZ/.build.log"
+    fi
+    # A imagem já está construída; o compose não deve voltar a construí-la.
+    ARRANQUE=(--no-build)
+fi
 
 # **`--quiet` esconde o erro.** Um `pip install` que falha diz porquê em três
 # linhas, e o `--quiet` enterra-as em trezentas de transferências de wheel. A
@@ -301,10 +367,11 @@ fi
 # ----------------------------------------------------------------- arranque --
 passo "A arrancar"
 if [ "$COM_TLS" = "sim" ]; then
-    docker compose --profile tls up -d \
+    docker compose --profile tls up -d "${ARRANQUE[@]+"${ARRANQUE[@]}"}" \
         || falhar "'docker compose --profile tls up -d' falhou"
 else
-    docker compose up -d || falhar "'docker compose up -d' falhou"
+    docker compose up -d "${ARRANQUE[@]+"${ARRANQUE[@]}"}" \
+        || falhar "'docker compose up -d' falhou"
 fi
 
 # ------------------------------------------------------------------ espera --
