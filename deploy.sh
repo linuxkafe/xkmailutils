@@ -269,8 +269,34 @@ fi
 # ------------------------------------------------------------------ build --
 passo "A construir a imagem"
 cd "$RAIZ"
-docker compose build --quiet \
-    || falhar "a construção da imagem falhou. Corra 'docker compose build' em $RAIZ para ver o erro."
+
+# **`--quiet` esconde o erro.** Um `pip install` que falha diz porquê em três
+# linhas, e o `--quiet` enterra-as em trezentas de transferências de wheel. A
+# primeira vez que este script correu num servidor a falhar, a mensagem foi
+# `process "/bin/sh -c python -m venv /venv ..." did not complete successfully:
+# exit code: 1` — que não diz nada. Um gate que engole a falha obriga a repetir
+# o comando à mão para saber o que se passou, e repetir é o que se tenta
+# evitar. O log vai inteiro para um ficheiro e as últimas linhas entram no
+# ecrã. (F-15)
+LOG_BUILD="$RAIZ/.build.log"
+if docker compose build --progress=plain >"$LOG_BUILD" 2>&1; then
+    rm -f "$LOG_BUILD"
+else
+    erro "a construção da imagem falhou. As últimas linhas do build:"
+    tail -n 30 "$LOG_BUILD" >&2 || true
+    echo "" >&2
+    erro "as três causas mais prováveis, por ordem:"
+    echo "  1. Sem acesso ao PyPI a partir desta máquina. A imagem faz" >&2
+    echo "     'pip install' na fase de build, e isso precisa de rede:" >&2
+    echo "       curl -sI https://pypi.org/simple/ | head -1" >&2
+    echo "  2. Memória insuficiente. 'pip install' do fastapi e do pydantic" >&2
+    echo "     leva mais do que um contentor pequeno aguenta:" >&2
+    echo "       free -m" >&2
+    echo "  3. Disco cheio. A imagem ocupa centenas de MB:" >&2
+    echo "       df -h $RAIZ" >&2
+    echo "" >&2
+    falhar "o log completo está em $LOG_BUILD"
+fi
 
 # ----------------------------------------------------------------- arranque --
 passo "A arrancar"
