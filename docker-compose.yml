@@ -1,6 +1,6 @@
 # xkmailutils — deploy de um serviço, num comando, sem configurar vhost.
 #
-# A aplicação serve-se a si mesma em http://HOST:8080/xkmailutils. Não há
+# A aplicação serve-se a si mesma em http://HOST:PORTA/xkmailutils. Não há
 # nginx, não há Apache, não há certificado, não há `sites-available`. É a
 # diferença entre "instalar isto" e "seguir um tutorial de meia hora".
 #
@@ -18,11 +18,17 @@ services:
     container_name: xkmailutils
     restart: unless-stopped
 
+    # `8642` e a primeira de uma lista, não um 8080 porque 8080 é a porta que
+    # meia dúzia de projectos auto-hospedados usa. O `deploy.sh` procura uma
+    # livre e escreve `XKMAILUTILS_PORTA` no `.env`; o `8642` aqui é só para o
+    # caso de alguém correr `docker compose up` sem passar pelo script, e
+    # `tests/test_instalacao.py` fixa que as duas predefinições coincidem.
+    #
     # Bind a `127.0.0.1` de propósito: a aplicação responde a `/saude`, que
     # devolve o número de utilizadores, e esse número não é público. A exposição
     # ao exterior é uma decisão de quem instala, e é uma linha.
     ports:
-      - "127.0.0.1:${XKMAILUTILS_PORTA:-8080}:8000"
+      - "127.0.0.1:${XKMAILUTILS_PORTA:-8642}:8000"
 
     env_file:
       - .env

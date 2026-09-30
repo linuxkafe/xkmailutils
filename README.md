@@ -1,9 +1,41 @@
-# mailutils
+# xkmailutils
 
 Assinaturas de email HTML que **não introduzem padrões de spam** nos filtros
 dos clientes — e um score que explica porquê.
 
 Self-hosted. Sem telemetria. Sem dependências novas.
+
+---
+
+## Instalar com um comando
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/linuxkafe/xkmailutils/main/deploy.sh | sudo bash
+```
+
+Isto é o que acontece, por ordem: verifica o que falta (git, curl, docker),
+escolhe **uma porta livre** — começa por 8642 e salta as ocupadas, porque 8080
+é a porta que meia dúzia de projectos auto-hospedados usa —, gera um `.env` com
+um segredo aleatório, arranca o contentor e diz o endereço.
+
+Depois disto, a aplicação está em `http://<servidor>:<porta>/xkmailutils`.
+
+Com opções, quando não serve o que está por omissão:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/linuxkafe/xkmailutils/main/deploy.sh \
+  | sudo bash -s -- --porta 8700 --email-admin eu@exemplo.pt
+```
+
+TLS sem tocar em `/etc`: `--dominio mail.exemplo.pt`, que liga um Caddy com
+certificado automático.
+
+**Antes de correr isto com `sudo`, lê o topo do `deploy.sh`.** Está lá escrito o
+que ele **não** faz: não instala nginx nem certbot, não abre portas de firewall,
+não define a palavra-passe do administrador. Um `curl | sudo bash` que faz
+pouco é legível; um que faz muito, não.
+
+Para correr o código em vez do contentor, ver [Arrancar](#arrancar).
 
 ---
 
@@ -19,6 +51,8 @@ O mailutils gera o HTML **por defeito** limpo, calcula um score de risco sobre
 o output real, e nomeia cada regra violada com a respective remediação.
 
 ## Arrancar
+
+Do código, sem contentor:
 
 ```bash
 cp .env.example .env

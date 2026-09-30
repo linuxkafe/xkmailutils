@@ -3,6 +3,8 @@
 #
 #     curl -fsSL https://raw.githubusercontent.com/linuxkafe/xkmailutils/main/deploy.sh | sudo bash
 #
+# A porta não é 8080 e não é fixa: procura a primeira livre a partir de 8642.
+#
 # Ou, com opções:
 #
 #     curl -fsSL https://raw.githubusercontent.com/linuxkafe/xkmailutils/main/deploy.sh \
@@ -35,7 +37,13 @@ set -euo pipefail
 REPO="linuxkafe/xkmailutils"
 BRANCH="${XKMAILUTILS_BRANCH:-main}"
 RAIZ="${XKMAILUTILS_DIR:-/opt/xkmailutils}"
-PORTA="${XKMAILUTILS_PORTA:-8080}"
+#: Porta em branco = escolher uma livre. Ver `escolher_porta`.
+PORTA="${XKMAILUTILS_PORTA:-}"
+#: Candidatas, por ordem de preferência. Nada de 8080: é a porta que meia
+#: dúzia de projectos auto-hospedados usa, e o objectivo de servir a aplicação
+#: numa porta alta era exactamente o de não chocar com nada. A primeira livre
+#: ganha; se nenhuma estiver livre, e a falha diz quais foram tentadas, para a pessoa escolher com --porta.
+PORTAS_CANDIDATAS="8642 8643 8644 8645 8646 8647 8648 8649 8650 8651 8652 8653"
 DOMINIO=""
 COM_TLS="nao"
 PREFIXO="/xkmailutils"
@@ -58,7 +66,7 @@ uso() {
     cat <<'FIM'
 uso: deploy.sh [opções]
 
-  --porta N        porta no host (predefinição 8080)
+  --porta N        porta no host. Sem esta opção, escolhe a primeira livre
   --dominio N      activa o TLS com Caddy; exige portas 80 e 443 livres
   --dir CAMINHO    onde instalar (predefinição /opt/xkmailutils)
   --prefixo CAMINHO  prefixo de path (predefinição /xkmailutils)
@@ -66,8 +74,33 @@ uso: deploy.sh [opções]
   --ramo N         ramo a instalar (predefinição main)
   --ajuda          este texto
 
-Sem opções, instala em http://<este-servidor>:<porta><prefixo>
+Sem opções, escolhe uma porta livre e instala em
+    http://<este-servidor>:<porta><prefixo>
 FIM
+}
+
+# ------------------------------------------------------------------ porta --
+
+# `porta_ocupada` responde se algo está a escutar. Usa o `/dev/tcp` do bash em
+# vez de `ss` ou `netstat` porque o bash já é um requisito do script e `ss` não
+# está em todas as máquinas — sobretudo em contentores mínimos, que é onde
+# este script vai correr mais vezes.
+porta_ocupada() {
+    (echo >"/dev/tcp/127.0.0.1/$1") >/dev/null 2>&1
+}
+
+# `escolher_porta` devolve a primeira candidata livre. A ordem de tentativa é
+# determinística: a mesma máquina dá a mesma porta, o que evita a surpresa de
+# reinstalar e ver a aplicação noutro sítio.
+escolher_porta() {
+    local candidata
+    for candidata in $PORTAS_CANDIDATAS; do
+        if ! porta_ocupada "$candidata"; then
+            printf "%s" "$candidata"
+            return 0
+        fi
+    done
+    return 1
 }
 
 # ------------------------------------------------------------------ args --
@@ -83,6 +116,16 @@ while [ $# -gt 0 ]; do
         *) uso; falhar "opção desconhecida: $1" ;;
     esac
 done
+
+# A porta é escolhida aqui, depois dos argumentos, para que `--porta` tenha
+# precedência e a procura só corra quando ninguém pediu uma.
+if [ -z "$PORTA" ]; then
+    PORTA="$(escolher_porta)" || falhar \
+        "nenhuma das portas $PORTAS_CANDIDATAS está livre. Escolhe outra com --porta N"
+    passo "Porta escolhida: $PORTA"
+fi
+porta_ocupada "$PORTA" &&
+    aviso "a porta $PORTA já tem algo a escutar. Se o contentor não arrancar, é por causa disto."
 
 # ------------------------------------------------------------ pré-requisitos --
 passo "A verificar o que falta"

@@ -9,7 +9,7 @@
 #    de propósito: a aplicação regista as rotas já com o prefixo, e fazer
 #    stripping aqui daria a cada URL um prefixo duplo. O proxy é transparente.
 #
-# A porta 8080 do host continua a existir para quem não quer usar isto. As duas
+# A porta do host continua a existir para quem não quer usar isto. As duas
 # formas de aceder são legítimas e não se atrapalam.
 
 {$XKMAILUTILS_DOMINIO} {
