@@ -287,3 +287,70 @@ exit 0
         assert 'ARRANQUE[@]+"${ARRANQUE[@]}"' in deploy, (
             "o `--no-build` não está a chegar ao `docker compose up`"
         )
+
+
+class TestOAvisoDoEmail:
+    """Uma instalação nova não tem email, e isso tem de ser dito.
+
+    O segundo factor deste produto é por email. O `deploy.sh` escreve
+    `MAILUTILS_MAIL_BACKEND=console` e deixa o SMTP vazio, o que é a decisão
+    certa para quem não quer configurar credenciais no primeiro minuto — e a
+    decisão errada se ninguém for avisado. Alguém ficou meia hora à espera de um
+    email que a aplicação nunca enviava, e a interface dizia que enviava.
+
+    Estes testes correm o bloco do aviso com um `.env` de mentira.
+    """
+
+    @staticmethod
+    def _bloco() -> str:
+        texto = DEPLOY.read_text(encoding="utf-8")
+        inicio = texto.index("if [ -z \"$(sed -n 's/^SMTP_HOST=//p'")
+        fim = texto.index("\nfi\n", inicio) + 4
+        return "RAIZ=$RAIZ\n" + texto[inicio:fim]
+
+    def _rodar(self, smtp_host: str) -> str:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as pasta:
+            (Path(pasta) / ".env").write_text(f"SMTP_HOST={smtp_host}\n", encoding="utf-8")
+            feito = subprocess.run(  # noqa: S603, S607
+                ["/bin/bash", "-c", self._bloco()],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+                env={"PATH": "/usr/bin:/bin", "HOME": pasta, "RAIZ": pasta},
+            )
+            return feito.stdout
+
+    def test_avisa_quando_o_smtp_nao_esta_configurado(self) -> None:
+        saida = self._rodar("")
+        assert "não está configurado" in saida, (
+            "uma instalação sem SMTP tem de dizer que não tem, no fim do deploy"
+        )
+        assert "docker compose" in saida, "o aviso tem de dizer onde se vê o código"
+        assert "MAILUTILS_MAIL_BACKEND=smtp" in saida, (
+            "o aviso tem de dizer o que mudar, não só que está mal"
+        )
+
+    def test_nao_avisa_quando_o_smtp_esta_configurado(self) -> None:
+        """Quem configurou o email não quer um aviso a dizer que não tem."""
+        assert "não está configurado" not in self._rodar("smtp.exemplo.pt")
+
+    def test_o_ficheiro_env_tem_o_que_trocar(self) -> None:
+        """O aviso manda editar o `.env`; as chaves têm de lá estar.
+
+        Um aviso que manda preencher um campo que não existe no ficheiro é um
+        aviso que não pode ser seguido.
+        """
+        texto = DEPLOY.read_text(encoding="utf-8")
+        for chave in (
+            "MAILUTILS_MAIL_BACKEND=console",
+            "SMTP_HOST=",
+            "SMTP_PORT=",
+            "SMTP_USER=",
+            "SMTP_PASSWORD=",
+            "SMTP_STARTTLS=",
+            "MAILUTILS_MAIL_FROM=",
+        ):
+            assert chave in texto, f"o .env gerado não tem `{chave}`"

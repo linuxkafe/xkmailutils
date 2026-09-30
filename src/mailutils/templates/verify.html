@@ -14,10 +14,38 @@
     <div class="notice notice--aviso" role="status">{{ aviso }}</div>
     {% endif %}
 
+    {# -------------------------------------------------------------- #
+       Aqui o servidor diz o que aconteceu, e não o queQueria que tivesse
+       acontecido.
+
+       Com `MAILUTILS_MAIL_BACKEND=console` — que é o que uma instalação nova
+       traz — **não sai email nenhum**: o código é escrito no registo do
+       contentor. A interface dizia «Enviámos um código para o seu email» na
+       mesma, e uma pessoa passou a procurar um email que nunca existiu. Um
+       ecrã que promete o que não cumpre é pior do que um ecrã calado. (F-16)
+       #}
+    {% if settings.mail_backend != 'smtp' %}
+    <div class="notice notice--aviso" role="status">
+      {% if settings.mail_backend == 'console' %}
+        Este servidor **não envia email**. O código de 6 dígitos foi escrito no
+        registo do contentor — vê-lo com
+        <code>docker compose logs -f</code>, à procura de
+        <code>[email:console]</code>.
+      {% else %}
+        Este servidor tem o envio de email desligado. Não há código para
+        receber.
+      {% endif %}
+    </div>
+    <p class="muted small">
+      Para o email sair a sério, o dono põe <code>MAILUTILS_MAIL_BACKEND=smtp</code>
+      e as credenciais SMTP no <code>.env</code>, e reinicia o contentor.
+    </p>
+    {% else %}
     <p class="muted small">
       Enviámos um código de 6 dígitos para o email desta conta. É válido durante
       {{ settings.otp_ttl_minutes }} minutos e só pode ser usado uma vez.
     </p>
+    {% endif %}
 
     <form method="post" action="{{ raiz }}/verificar" autocomplete="off">
       <input type="hidden" name="csrf_token" value="{{ csrf }}">

@@ -251,8 +251,17 @@ MAILUTILS_SECRET_KEY=$SECRETO_NOVO
 # emails por http://, e o score de spam penaliza a assinatura. Leia README.
 MAILUTILS_ALLOW_INSECURE_MEDIA=$INSECURE
 
-# Email: onde vão os códigos de acesso e os convites.
-# 'console' escreve-os no terminal do contentor — é para experimentar.
+# ------------------------------------------------------------------ email --
+#
+# O segundo factor deste produto é por email. Sem isto configurado, **ninguém
+# recebe códigos** e a aplicação não tem como funcionar a sério.
+#
+# 'console' imprime o código no registo do contentor em vez de o enviar. É o
+# que uma instalação nova traz, e a interface avisa que é isso que está a
+# acontecer — mas aviso nenhum substitui um email a chegar.
+#
+# Para enviar email a sério, muda a primeira linha e preenche as credenciais do
+# teu servidor SMTP. Nada mais é preciso; a aplicação não tem mais botões.
 MAILUTILS_MAIL_BACKEND=console
 SMTP_HOST=
 SMTP_PORT=587
@@ -437,6 +446,35 @@ Depois, entre em $BASE_PUBLICA$PREFIXO
 FIM
 else
     printf "%sJá existe pelo menos um utilizador.%s Nada a fazer aqui.\n\n" "$G" "$N"
+fi
+
+# O aviso do email vai aqui e não no fim, porque é a única coisa desta
+# instalação que faz o produto **não funcionar** sem que nada o diga. A
+# interface já avisa quem tenta entrar; isto avisa quem acabou de instalar.
+if [ -z "$(sed -n 's/^SMTP_HOST=//p' "$RAIZ/.env" | head -1)" ]; then
+    cat <<FIM
+
+${A}${E}${G}O email não está configurado.${N}${E}${A}
+
+  O segundo factor deste produto é por email. Com o que está no .env agora, o
+  código **não sai**: é impresso no registo do contentor. Para ver o código:
+
+      docker compose -f $RAIZ/docker-compose.yml logs -f | grep -A3 email:console
+
+  Para enviar email a sério, edita $RAIZ/.env:
+
+      MAILUTILS_MAIL_BACKEND=smtp
+      SMTP_HOST=<o teu servidor smtp>
+      SMTP_PORT=587
+      SMTP_USER=...
+      SMTP_PASSWORD=...
+      MAILUTILS_MAIL_FROM=<endereço de remetente>
+
+  e depois:
+
+      docker compose -C $RAIZ up -d --force-recreate
+
+FIM
 fi
 
 cat <<FIM

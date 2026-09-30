@@ -21,6 +21,11 @@ LOCKED_OUT = "demasiadas tentativas"
 INVALID_CREDENTIALS = "email ou palavra-passe inválidos"
 ACCOUNT_INACTIVE = "conta desactivada"
 CHALLENGE_SENT = "código enviado"
+#: O pedido caiu dentro da janela de espera, e portanto **não** saiu código
+#: nenhum. Antes partilhava a razão de `CHALLENGE_SENT`, e a interface dizia
+#: «Enviámos um código para o seu email» sem ter enviado nada — que é como uma
+#: pessoa passa meia hora à procura de um email que não existe. (F-16)
+CHALLENGE_ENVIADO_HA_POUCO = "código já enviado há pouco"
 INVALID_CODE = "código inválido ou expirado"
 CHALLENGE_EXHAUSTED = "demasiadas tentativas — peça um novo código"
 EMAIL_SEND_FAILED = "não foi possível enviar o email"
@@ -375,10 +380,15 @@ def login(
 
     remaining = cooldown_remaining(conn, email, settings)
     if remaining > 0:
-        # Não se envia código, mas também não se diz porque — a resposta é a
-        # mesma que um dispositivo novo receberia. A UI mostra a espera.
+        # Não se envia código. A resposta é a mesma que um dispositivo novo
+        # receberia, mas o texto **não** é: a interface diz que há um código a
+        # caminho e diz quanto falta. Um ecrã que promete um email e não o
+        # envia é pior do que um ecrã que não promete nada.
         return LoginOutcome(
-            ok=False, must_verify=True, reason=CHALLENGE_SENT, retry_after=remaining
+            ok=False,
+            must_verify=True,
+            reason=CHALLENGE_ENVIADO_HA_POUCO,
+            retry_after=remaining,
         )
 
     challenge_id, code = issue_challenge(conn, settings, user["id"], fingerprint)
@@ -546,6 +556,7 @@ __all__ = [
     "CHALLENGE_EXHAUSTED",
     "CHALLENGE_SENT",
     "EMAIL_SEND_FAILED",
+    "CHALLENGE_ENVIADO_HA_POUCO",
     "INVALID_CODE",
     "INVALID_CREDENTIALS",
     "LOCKED_OUT",

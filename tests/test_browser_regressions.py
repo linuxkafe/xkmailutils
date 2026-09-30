@@ -307,3 +307,133 @@ class TestAInstalaOCiTemDeTerTudo:
             "o Dockerfile menciona playwright; a imagem de runtime não corre o "
             "suite E2E e não precisa do browser"
         )
+
+
+class TestAInterfaceNaoPrometeOQueNaoCumpre:
+    """A página de verificação diz o que aconteceu, não o que queríamos.
+
+    Duas mentiras que custaram uma hora a alguém, e que nenhuma suite apanhava
+    porque ambas envolvem **configuração**, não código. (F-16)
+
+    1. Com `MAILUTILS_MAIL_BACKEND=console` — o que uma instalação nova traz —
+       **não sai email nenhum**. A página dizia «Enviámos um código para o seu
+       email», e a pessoa foi procurar um email que nunca existiu.
+    2. Um pedido dentro da janela de espera não envia código, mas devolvia a
+       mesma razão de um envio verdadeiro, e dizia a mesma frase.
+
+    Cada teste constrói a sua própria aplicação, porque o `mail_backend` é o
+    que está em causa. A conta é criada na base de dados **dessa** aplicação: a
+    fixture `normal_user` semeia noutra, e um login contra uma base onde a
+    conta não existe nunca chega a `/verificar`.
+    """
+
+    @staticmethod
+    def _app(make_app, **overrides) -> SyncASGIClient:
+        from conftest import TEST_PASSWORD
+
+        from mailutils.auth import service
+
+        app = make_app(**overrides)
+        ligacao = app.app.state.db_factory()
+        try:
+            service.create_user(ligacao, "ana@exemplo.pt", TEST_PASSWORD)
+        finally:
+            ligacao.close()
+        return app
+
+    @staticmethod
+    def _ate_verificar(app: SyncASGIClient) -> None:
+        """Login num dispositivo novo, que é o caminho que leva a `/verificar`."""
+        from conftest import TEST_PASSWORD, login
+
+        login(app, "ana@exemplo.pt", TEST_PASSWORD, user_agent=f"agente-novo-{id(app)}")
+
+    def test_com_console_diz_onde_esta_o_codigo(self, make_app) -> None:
+        """Com `console`, a página diz que o email não sai e onde está o código."""
+        app = self._app(make_app, mail_backend="console")
+        self._ate_verificar(app)
+        html = app.get("/verificar", follow_redirects=True).text
+        assert "não envia email" in html, (
+            "com o backend `console` a página tem de dizer que o email não sai e "
+            "onde está o código. Sem isto, diz que enviou."
+        )
+        assert "email:console" in html, "a página tem de dizer o que se procura nos logs"
+
+    def test_com_console_nao_diz_que_enviou(self, make_app) -> None:
+        """A prova é por ausência, e é essa a forma que sobrevive ao tempo."""
+        app = self._app(make_app, mail_backend="console")
+        self._ate_verificar(app)
+        html = app.get("/verificar", follow_redirects=True).text
+        assert "Enviámos um código de 6 dígitos para o email" not in html, (
+            "com o backend `console` não foi enviado email nenhum e a página "
+            "afirma que foi. Foi isto que fez alguém procurar um email inexistente."
+        )
+
+    def test_com_smtp_diz_o_que_diz_de_si(self, make_app, captured_emails) -> None:
+        """Com SMTP a sério, a frase é a certa e o aviso some.
+
+        Uma instalação de produção não pode levar um aviso a dizer que o email
+        não sai, e a página não pode deixar de dizer que envia.
+        """
+        app = self._app(
+            make_app,
+            mail_backend="smtp",
+            smtp_host="127.0.0.1",
+            smtp_port=25,
+            mail_from="mailutils@exemplo.pt",
+        )
+        self._ate_verificar(app)
+        html = app.get("/verificar", follow_redirects=True).text
+        assert "Enviámos um código de 6 dígitos para o email" in html, (
+            "com SMTP configurado a página tem de dizer que enviou — é o que está a acontecer"
+        )
+        assert "não envia email" not in html, (
+            "um servidor com SMTP configurado não pode mostrar um aviso a dizer que o email não sai"
+        )
+
+    def test_com_email_desligado_diz_que_nao_ha_codigo(self, make_app) -> None:
+        """O terceiro backend — `null` — também não pode mentir."""
+        app = self._app(make_app, mail_backend="null")
+        self._ate_verificar(app)
+        html = app.get("/verificar", follow_redirects=True).text
+        assert "desligado" in html
+        assert "Enviámos um código de 6 dígitos para o email" not in html
+
+    def test_o_cooldown_diz_que_ainda_falta(self, make_app) -> None:
+        """Duas vezes seguidas: a segunda não envia e não pode dizer que enviou.
+
+        O `retry_after` era calculado e nunca usado — o servidor sabia que
+        faltavam 47 segundos e a interface não dizia nada. Um ecrã que promete
+        um email e não o envia é pior do que um ecrã calado.
+        """
+        from conftest import TEST_PASSWORD, csrf_from
+
+        # Aqui o cooldown é o do repo, não zero: é o comportamento que se quer.
+        app = self._app(make_app, mail_backend="console", otp_cooldown_seconds=60)
+        self._ate_verificar(app)
+        csrf = csrf_from(app, "/entrar")
+        resposta = app.post(
+            "/entrar",
+            data={
+                "csrf_token": csrf,
+                "email": "ana@exemplo.pt",
+                "password": TEST_PASSWORD,
+            },
+            headers={"user-agent": f"outro-agente-{id(app)}-b"},
+            follow_redirects=False,
+        )
+        destino = resposta.headers.get("location", "")
+        assert "codigo-recentemente-enviado" in destino, (
+            f"o cooldown voltou a dizer que envia: {destino}"
+        )
+        assert "faltam=" in destino, f"o servidor sabe quanto falta e não diz: {destino}"
+
+
+class TestAMensagemDoCooldownNaoEAMensagemDeEnvio:
+    def test_as_duas_mensagens_sao_diferentes(self) -> None:
+        from mailutils.templates import MESSAGENS
+
+        assert "codigo-recentemente-enviado" in MESSAGENS
+        assert MESSAGENS["codigo-recentemente-enviado"] != MESSAGENS["codigo-enviado"], (
+            "se forem iguais, o cooldown volta a mentir"
+        )

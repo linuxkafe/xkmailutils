@@ -58,6 +58,7 @@ _ERR_SLUGS = {
     service.INVALID_CODE: "codigo",
     service.CHALLENGE_EXHAUSTED: "excedido",
     service.EMAIL_SEND_FAILED: "envio",
+    service.CHALLENGE_ENVIADO_HA_POUCO: "codigo-recentemente-enviado",
     "csrf": "csrf",
     "convite": "convite",
 }
@@ -121,6 +122,15 @@ def login_submit(
     if outcome.ok:
         return _establish_session(
             request, conn, settings, outcome.user_id, "/assinatura?aviso=bem-vindo"
+        )
+
+    # O cooldown tem de ser tratado **antes** de `must_verify`. Ambos vão para
+    # `/verificar`, e o `must_verify` devolvia a rota sem o aviso — que é como
+    # o texto novo ficou por usar, e o ecrã continuava a dizer que envia. (F-16)
+    if outcome.reason == service.CHALLENGE_ENVIADO_HA_POUCO:
+        return ir(
+            request,
+            f"/verificar?aviso=codigo-recentemente-enviado&faltam={outcome.retry_after}",
         )
 
     if outcome.must_verify:

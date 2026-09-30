@@ -37,6 +37,11 @@ MESSAGENS: dict[str, str] = {
     "excedido": "Excedeu as tentativas deste código. Peça um novo.",
     "codigo": "Código inválido ou expirado. Peça um novo.",
     "codigo-enviado": "Enviámos um código de 6 dígitos para o seu email.",
+    # Não é o mesmo que `codigo-enviado`, e é por isso que existe: aquele
+    # responde por um código que saiu, este por um pedido que chegou cedo. (F-16)
+    "codigo-recentemente-enviado": (
+        "Já enviámos um código há pouco. Espera um pouco e tenta outra vez."
+    ),
     "curta": "A palavra-passe precisa de pelo menos 12 caracteres.",
     # convites
     "convite": "Este convite já foi usado, foi revogado ou expirou.",
