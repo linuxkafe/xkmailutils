@@ -50,6 +50,15 @@
   var outTxt = document.getElementById("saida-txt");
 
   var MARKERS = { SEGURO: "[OK]", ATENCAO: "[!]", ELEVADO: "[!!]", CRITICO: "[X]" };
+  /* Um formulário em branco não é uma assinatura segura. Mostrar «0 / 100
+   * SEGURO» com um selo verde treina o utilizador a ignorar o selo antes de
+   * escrever uma letra. O score continua a ser 0; o que muda é o rótulo. (F-12) */
+  var VAZIO = {
+    nivel: "VAZIO",
+    texto: "\u2014",
+    descricao: "Preencha os campos ao lado para ver o score.",
+    badge: "POR PREENCHER"
+  };
 
   function collect() {
     var data = {};
@@ -68,41 +77,66 @@
       .replace(/"/g, "&quot;");
   }
 
-  /* O preview vive num `Blob` `text/html` e não em `srcdoc` porque o
-   * `srcdoc` teria de ser-HTML escapado, o que o não renderizaria. O
-   * `sandbox=""` no iframe é a barreira: sem `allow-scripts` nem
-   * `allow-same-origin`, o conteúdo é opaco e não executa nada. */
-  function setPreview(html) {
+  /* O preview é um `iframe` que carrega `/assinatura/preview-documento`.
+   *
+   * Antes era um `Blob` `text/html`, e o browser dava ao documento a CSP de
+   * quem o criou: com `style-src 'self'` a assinatura aparecia sem uma cor
+   * sequer, em Times New Roman, com os acentos como `TÃ©cnica` porque o Blob
+   * não levava charset. Um `<meta http-equiv="Content-Security-Policy">`
+   * dentro do blob não resolvia — as políticas juntam-se, e a mais restritiva
+   * ganha; foi medido em Chromium antes de se tentar. (F-04)
+   *
+   * A rota dá ao documento a CSP dele, e isso permite à aplicação ficar sem
+   * `blob:` em `frame-src`. O custo é o iframe recarregar a cada alteração,
+   * que é o mesmo debounce de 350 ms que já existia. */
+  function previewUrl() {
+    var body = new URLSearchParams();
+    body.set("fields", JSON.stringify(collect()));
+    body.set("theme", themeInput ? themeInput.value : "dark");
+    return RAIZ + "/assinatura/preview-documento?" + body.toString();
+  }
+
+  function setPreview() {
     if (!preview) return;
-    var blob = new Blob([html], { type: "text/html" });
-    var url = URL.createObjectURL(blob);
-    if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
-    preview.dataset.objectUrl = url;
+    var url = previewUrl();
+    // Não recarregar quando o conteúdo não mudou. Sem isto o iframe pisca a
+    // cada tecla, mesmo quando o utilizador está a corrigir a mesma palavra.
+    if (preview.dataset.rendered === url) return;
+    preview.dataset.rendered = url;
     preview.src = url;
   }
 
   function renderScore(score) {
     if (!scoreBox) return;
-    scoreBox.setAttribute("data-nivel", score.categoria);
+    var vazio = score.vazio === true;
+    scoreBox.setAttribute("data-nivel", vazio ? VAZIO.nivel : score.categoria);
     var value = scoreBox.querySelector(".score__value");
-    if (value) value.innerHTML = escapeHtml(score.score) + ' <span class="score__denom">/ 100</span>';
+    if (value) {
+      value.innerHTML = vazio
+        ? '<span class="score__denom">\u2014</span>'
+        : escapeHtml(score.score) + ' <span class="score__denom">/ 100</span>';
+    }
     var badge = scoreBox.querySelector(".score__badge");
-    if (badge) badge.textContent = score.categoria_acentuada;
+    if (badge) badge.textContent = vazio ? VAZIO.badge : score.categoria_acentuada;
     var marker = scoreBox.querySelector(".score__marker");
-    if (marker) marker.textContent = MARKERS[score.categoria] || "[?]";
+    if (marker && !vazio) marker.textContent = MARKERS[score.categoria] || "[?]";
     var fill = scoreBox.querySelector(".score__fill");
     /* O atributo, e não `style.width`: a CSP bloqueia estilos inline, e
      * `app.css` tem uma regra por valor do score porque o score é um inteiro
      * de 0 a 100. `tests/test_ui_theme.py` garante que a tabela está completa
      * — se o score passar a fraccionário, a barra esvazia em vez de mentir. */
-    if (fill) fill.setAttribute("data-score", score.score);
+    if (fill) fill.setAttribute("data-score", vazio ? 0 : score.score);
 
     var desc = scoreBox.querySelector(".score__head + .score__bar ~ p");
-    if (desc) desc.textContent = score.descricao;
+    if (desc) desc.textContent = vazio ? VAZIO.descricao : score.descricao;
 
     var findings = scoreBox.querySelector(".findings");
+    var creditos = scoreBox.querySelector(".credit");
+    if (creditos) creditos.hidden = vazio;
     if (findings) {
-      if (score.regras.length === 0) {
+      if (vazio) {
+        findings.innerHTML = "";
+      } else if (score.regras.length === 0) {
         findings.parentElement.innerHTML =
           '<p class="small m-0">Nenhuma regra disparada.</p>';
       } else {
@@ -150,7 +184,7 @@
         if (outHtml) outHtml.value = data.html;
         if (outTxt) outTxt.value = data.plain;
         if (fieldsInput) fieldsInput.value = JSON.stringify(collect());
-        setPreview(data.html);
+        setPreview();
       })
       .catch(function (err) {
         if (err && err.name === "AbortError") return;
@@ -204,7 +238,8 @@
   var copyTxt = document.getElementById("copiar-txt");
   if (copyTxt) copyTxt.addEventListener("click", function () { copyFrom(outTxt, copyTxt); });
 
-  // Sem JS, o preview fica vazio. Preenche com o HTML que o servidor já pôs
-  // na textarea — é o mesmo conteúdo, apenas sem a moldura do iframe.
-  if (preview && outHtml && outHtml.value) setPreview(outHtml.value);
+  // Sem JS, o preview fica vazio: a rota é chamada por JavaScript. Quem não
+  // tiver JavaScript tem a textarea "HTML para colar" e a exportação, que são
+  // o mesmo conteúdo — o mesmo princípio do resto da aplicação.
+  if (preview) setPreview();
 })();

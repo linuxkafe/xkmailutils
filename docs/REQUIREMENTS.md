@@ -68,7 +68,7 @@ Estado: `DRAFT` | `IMPLEMENTADO` | `VERIFICADO`. Só `VERIFICADO` tem teste.
 |----|-----------|-----------|--------|
 | FR-5.1 | **Dark mode: o fundo do cabeçalho e o do rodapé são idênticos** (mesmo token, sem gradiente). Requisito explícito do dono do projecto. | Must | IMPLEMENTADO |
 | FR-5.2 | Paleta derivada do LINUXKAFÉ (`#F8B400` primário, `#2d2d2d` superfície escura, `#212121` texto, `#0056b3` ligação). **Sem qualquer referência à Universidade do Porto.** | Must | IMPLEMENTADO |
-| FR-5.3 | Alternância claro/escuro com persistência em cookie, sem flash de tema incorrecto no primeiro paint. | Must | IMPLEMENTADO |
+| FR-5.3 | Alternância claro/escuro por botão no cabeçalho, em todas as páginas, com persistência em cookie e sem flash de tema incorrecto no primeiro paint. | Must | IMPLEMENTADO |
 | FR-5.4 | Interface em português (pt-PT). | Must | IMPLEMENTADO |
 | FR-5.5 | Layout responde a 375 px, 768 px, 1440 px. | Should | IMPLEMENTADO |
 | FR-5.6 | Navegação por teclado e `aria-label` nos controlos interactivos. | Should | IMPLEMENTADO |
@@ -92,6 +92,7 @@ Estado: `DRAFT` | `IMPLEMENTADO` | `VERIFICADO`. Só `VERIFICADO` tem teste.
 | NFR-13 | Acessibilidade | As cores funcionais usadas **como texto** (`--ok-text`, `--warn-text`, `--high-text`, `--bad-text`, `--info-text`) passam 4.5:1 sobre `--bg`, `--bg-alt` e `--surface` nos dois temas. As variantes de preenchimento (`--*-fill`, barras e bordas) estão isentas. O contraste do texto corrente e o contraste *não* textual não estão verificados. | IMPLEMENTADO |
 | NFR-14 | Internacionalização | Apenas pt-PT. Todas as mensagens de interface vivem em `templates.MESSAGENS`, indexadas por chave estável — é o que permite traduzir sem caçar strings em templates. | IMPLEMENTADO |
 | NFR-15 | Maintainability | O caminho login → segundo factor → editor → score → exportação é verificado num browser real, com clique e formulário, e corre dentro de `make check`. Um E2E que passa sem browser conta como falhado, não como ignorado. | IMPLEMENTADO |
+| NFR-16 | Maintainability | Toda a correcção de um bug tem uma mutação associada que, se passar, deixa `make check` vermelho. O ficheiro `aes/tickets/T008-mutations.md` é **gerado** por `scripts/run-mutations.py` a partir da saída real dos comandos — ninguém escreve lá um resultado à mão. | IMPLEMENTADO |
 
 ## Constraints
 

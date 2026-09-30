@@ -175,15 +175,19 @@
 
     {# --------------------------------------------------------- preview --- #}
     <div class="stack">
-      <div class="score" data-nivel="{{ score.categoria }}" id="caixa-score"
-           aria-live="polite">
+      <div class="score" data-nivel="{{ 'VAZIO' if score.vazio else score.categoria }}"
+           id="caixa-score" aria-live="polite">
         <div class="score__head">
           <div>
             <div class="muted small">Risco de spam estimado</div>
-            <div class="score__value">{{ score.score }}<span
-              class="score__denom"> / 100</span></div>
+            <div class="score__value">{% if score.vazio %}<span
+              class="score__denom">—</span>{% else %}{{ score.score }}<span
+              class="score__denom"> / 100</span>{% endif %}</div>
           </div>
           <div class="ta-right">
+            {% if score.vazio %}
+            <span class="score__badge">POR PREENCHER</span>
+            {% else %}
             <span class="score__badge">{{ score.categoria_acentuada }}</span>
             <div class="score__marker" aria-hidden="true">
               {% if score.categoria == 'SEGURO' %}[OK]
@@ -191,6 +195,7 @@
               {% elif score.categoria == 'ELEVADO' %}[!!]
               {% else %}[X]{% endif %}
             </div>
+            {% endif %}
           </div>
         </div>
 
@@ -198,7 +203,9 @@
           <div class="score__fill" data-score="{{ score.score }}"></div>
         </div>
 
-        <p class="small">{{ score.descricao }}</p>
+        <p class="small">{% if score.vazio %}Preencha os campos ao lado para ver
+          o score. Um formulário em branco não é uma assinatura segura — é
+          nenhuma assinatura.{% else %}{{ score.descricao }}{% endif %}</p>
 
         {% if score.regras %}
         <ul class="findings">
@@ -219,7 +226,7 @@
         </p>
         {% endif %}
 
-        {% if score.creditos %}
+        {% if score.creditos and not score.vazio %}
         <p class="credit mt-1">
           Créditos:
           {% for c in score.creditos %}{{ c.regra }} ({{ c.pontos }}){% if not loop.last %}, {% endif %}{% endfor %}

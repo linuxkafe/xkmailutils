@@ -194,3 +194,116 @@ class TestNenhumEstiloInlineSobrevive:
         base = re.search(r"\.score__fill \{([^}]*)\}", sem_comentarios)
         assert base, "app.css não tem regra .score__fill"
         assert "width: 0;" in base.group(1), ".score__fill não tem width: 0 por omissão"
+
+
+class TestNenhumSelectorOrfaoEmAppCss:
+    """Toda a classe definida em `app.css` tem de ser usada por algum lado.
+
+    A migração dos 43 atributos `style=` para classes deixou 11 selectores que
+    nada referenciava: quatro utilitários de espaçamento que substituíam
+    margens que ninguém tinha, e sete selectores que já estavam mortos. Uma
+    revisão contou-os por extracção, e admitiu que não conseguia dizer quais
+    eram novos e quais já lá estavam — porque `app.css` entrou no git no mesmo
+    commit. A resposta honesta é não precisar de saber: a regra vale para
+    todos, e a falta de baseline deixa de importar. (F-11)
+
+    O teste substitui um lint, e é melhor que um lint porque conhece a
+    verdade: um seletor morto não é um erro de sintaxe, é código que ninguém
+    pediu e que ninguém vai remover.
+    """
+
+    @staticmethod
+    def _definidos() -> set[str]:
+        css = re.sub(r"/\*.*?\*/", "", APP_CSS, flags=re.S)
+        return set(re.findall(r"\.([a-zA-Z][\w-]*)", css))
+
+    @staticmethod
+    def _usados() -> set[str]:
+        usados: set[str] = set()
+        fontes = sorted(TEMPLATES.glob("*.html")) + [APP_JS]
+        for ficheiro in fontes:
+            texto = ficheiro.read_text(encoding="utf-8")
+            for grupo in re.findall(r'class="([^"]*)"', texto):
+                usados.update(grupo.split())
+            for grupo in re.findall(r'className\s*=\s*"([^"]*)"', texto):
+                usados.update(grupo.split())
+        return usados
+
+    def test_todo_o_selector_definido_e_usado(self) -> None:
+        orfaos = sorted(self._definidos() - self._usados())
+        assert not orfaos, (
+            f"selectores em `app.css` que nenhum template nem `app.js` referencia: "
+            f"{orfaos}. Ou se usam, ou saem — um selector morto é dívida que "
+            f"ninguém pediu."
+        )
+
+    def test_a_moldura_do_preview_continua_branca(self) -> None:
+        """Branco é decisão, e a decisão está escrita.
+
+        O preview mostra a assinatura como ela aparece no cliente de email, e o
+        cliente de email é claro. Um painel do preview escuro seria mais bonito
+        e mentiroso. O que torna a decisão legível é a moldura ter bordo em
+        ambos os temas, para se perceber que é uma superfície e não um bug.
+        """
+        assert ".preview__frame" in APP_CSS
+        bloco = re.search(
+            r"\.preview__frame\s*\{([^}]*)\}", re.sub(r"/\*.*?\*/", "", APP_CSS, flags=re.S)
+        )
+        assert bloco, "a moldura do preview desapareceu"
+        for linha in ("border:", "background: #fff"):
+            assert linha in bloco.group(1), f"`.preview__frame` perdeu `{linha}`"
+        assert "molduras de imagem com fundo branco" in Path(ROOT / "docs" / "DESIGN.md").read_text(
+            encoding="utf-8"
+        ), "a decisão deixou de estar documentada"
+
+
+class TestAInstalaOCiTemDeTerTudo:
+    """`make check` exige o Chromium. A CI tem de o instalar.
+
+    `make setup` faz `pip install -e ".[dev]"`, que instala o **pacote**
+    `playwright` — e não o browser. A CI correria `make check` num
+    `ubuntu-latest` sem Chromium em cache e ficaria vermelha no primeiro run,
+    que é o F-03. A única mitigação era a mensagem do gate, que ninguém lê
+    numa CI que falha. (F-03)
+
+    Um workflow é configuração, e configuração não tem testes — até alguém
+    escrever este teste. A leitura é por texto e não por YAML de propósito:
+    acrescentar PyYAML para isto seria uma dependência nova por causa de um
+    `grep`, e o `CLAUDE.md` é explícito sobre dependências.
+    """
+
+    @staticmethod
+    def _workflows() -> list[Path]:
+        raiz = ROOT / ".github" / "workflows"
+        return sorted(raiz.glob("*.yml")) + sorted(raiz.glob("*.yaml"))
+
+    @staticmethod
+    def _instalam_browser(caminho: Path) -> bool:
+        return "playwright install" in caminho.read_text(encoding="utf-8")
+
+    def _ci_que_corre_make_check(self) -> list[Path]:
+        return [p for p in self._workflows() if "make check" in p.read_text(encoding="utf-8")]
+
+    def test_ha_pelo_menos_uma_ci(self) -> None:
+        assert self._workflows(), "não há workflow nenhum em .github/workflows/"
+        assert self._ci_que_corre_make_check(), "nenhum workflow corre `make check`"
+
+    def test_toda_a_ci_que_corre_o_gate_instala_o_browser(self) -> None:
+        sem = [p.name for p in self._ci_que_corre_make_check() if not self._instalam_browser(p)]
+        assert not sem, (
+            f"estes workflows correm `make check` sem instalar o Chromium: {sem}. "
+            f"`make setup` instala o pacote, não o browser, e `e2e-check` falha "
+            f"alto sem ele — a CI fica vermelha no primeiro run. (F-03)"
+        )
+
+    def test_o_dockerfile_nao_precisa_do_browser(self) -> None:
+        """A imagem de runtime não corre testes, logo não precisa do Chromium.
+
+        Se algum dia levar testes para a imagem, este teste é o que diz para
+        rever a decisão em vez de a descobrir em produção.
+        """
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        assert "playwright" not in dockerfile.lower(), (
+            "o Dockerfile menciona playwright; a imagem de runtime não corre o "
+            "suite E2E e não precisa do browser"
+        )

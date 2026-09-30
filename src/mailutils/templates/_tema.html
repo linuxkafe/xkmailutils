@@ -1,0 +1,30 @@
+{#
+  Alternância do tema da aplicação.
+
+  Um formulário `POST` e não um link, e não JavaScript: o `POST` é o único
+  caminho em que o valor tem de ser validado, e um `GET` que muda estado é mau
+  costume mesmo quando o estado é só a cor de fundo. Sem JavaScript funciona
+  igual, que é o mesmo princípio do resto da aplicação (app.js:1-12).
+
+  O token é o de sessão quando há sessão, e o de pré-sessão quando não há —
+  o botão está no cabeçalho de todas as páginas, e a página de login é
+  justamente onde se quer poder escolher antes de entrar. (F-01)
+
+  Os nomes são distintos dos botões `.botao-tema` do editor: aqueles são o
+  tema **da assinatura**, que vai no email. Os dois concepts estão lado a lado
+  no ecrã do editor, e é a confusão mais fácil que este ecrã tem.
+#}
+<div class="tema-switch" role="group" aria-label="Tema da aplicação">
+  {% for chave, rotulo in [("light", "Claro"), ("dark", "Escuro")] %}
+  <form method="post" action="{{ raiz }}/tema" class="tema-switch__form">
+    <input type="hidden" name="csrf_token"
+           value="{{ sessao.csrf_token if sessao else csrf }}">
+    <input type="hidden" name="theme" value="{{ chave }}">
+    <button type="submit" class="btn btn--sm btn--secondary tema-switch__botao"
+            data-tema-alvo="{{ chave }}"
+            {% if tema == chave %}aria-pressed="true"{% else %}aria-pressed="false"{% endif %}>
+      {{ rotulo }}
+    </button>
+  </form>
+  {% endfor %}
+</div>

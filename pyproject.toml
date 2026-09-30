@@ -35,7 +35,7 @@ where = ["src"]
 # tempo de execução. Sem esta secção, um `pip install .` instala o código e
 # deixa de fora os templates — e a falha só aparece no arranque, na primeira
 # renderização, como um `TemplateNotFound`.
-mailutils = ["templates/*.html", "static/*"]
+mailutils = ["templates/*.html", "static/*.html", "static/*.css", "static/*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

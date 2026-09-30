@@ -20,6 +20,8 @@ esac
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 FAIL=0
 COUNT=0
+DECLARADOS=0
+SKIPPED=0
 
 log() { printf "  %s\n" "$*"; }
 pass() {
@@ -35,6 +37,14 @@ skip() {
 	COUNT=$((COUNT + 1))
 	log "⏭️  $1"
 }
+
+# Um critério marcado com `[x]` é uma declaração do autor do ticket, não uma
+# medição. Contá-lo como `pass` é o que faz este gate mentir, por isso tem
+# contador próprio e não entra em `COUNT`.
+declare() {
+	DECLARADOS=$((DECLARADOS + 1))
+	log "📋  declarado, não verificado: $1"
+}
 bail() {
 	log "ERROR: $1"
 	exit 1
@@ -44,7 +54,11 @@ bail() {
 TICKET="${1:-}"
 if [ -z "$TICKET" ]; then
 	if [ -f "$SCRIPT_DIR/aes/kanban.md" ]; then
-		TICKET=$(grep "^current_ticket:" "$SCRIPT_DIR/aes/kanban.md" | awk '{print $2}')
+		# O `awk` deixava as aspas do YAML no valor: `current_ticket: "T008"`
+		# produzia `"T008"`, e o `find -name '"T008"-*.md'` não casava com
+		# nada. O comando do `CLAUDE.md` estava partido. (F-09)
+		TICKET=$(grep "^current_ticket:" "$SCRIPT_DIR/aes/kanban.md" |
+			awk '{print $2}' | tr -d "\"'")
 	fi
 	if [ -z "$TICKET" ]; then
 		bail "No ticket ID given and no current_ticket in aes/kanban.md"
@@ -101,7 +115,12 @@ while IFS= read -r line; do
 
 	case "$checked" in
 	"x")
-		pass "(already checked) $text"
+		# Isto NÃO é uma verificação. Uma caixa marcada é uma afirmação de
+		# quem escreveu o ticket, e o script só sabe lê-la. Contá-la como
+		# `pass` fazia `make verify T001` sair 0 com «22 passed» sem correr
+		# um único comando — o mesmo defeito que o `format-check` tinha, e
+		# que a revisão encontrou aqui. (F-09)
+		declare "$text"
 		continue
 		;;
 	esac
@@ -197,13 +216,21 @@ while IFS= read -r line; do
 	case "$result" in
 	pass) pass "$text — $evidence" ;;
 	fail) fail "$text — $evidence" ;;
-	*) skip "Cannot auto-verify: $text" ;;
+	*)
+		SKIPPED=$((SKIPPED + 1))
+		skip "não auto-verificável: $text"
+		;;
 	esac
 done <"$CRITERIA_FILE"
 
 echo ""
 echo "────────────────────────────────────────────────────"
-echo "  Result: $((COUNT - FAIL)) passed, $FAIL failed, $COUNT total"
+echo "  Verificados: $((COUNT - FAIL - SKIPPED)) passed, $FAIL failed, $SKIPPED não verificáveis"
+echo "  Declarados:  $DECLARADOS  (caixas [x] — afirmações do autor, não medições)"
 echo "────────────────────────────────────────────────────"
+echo ""
+echo "  Isto NÃO é um gate. Um criterio marcado com [x] é lido, não medido."
+echo "  Para medir: make check, e a validacao humana de"
+echo "  aes/peer-reviews/T008/human-validation.sh."
 
 [ "$FAIL" -eq 0 ]

@@ -128,6 +128,58 @@ def page(
     }
     if context:
         base.update(context)
-    return templates.TemplateResponse(
+
+    # Sem sessão, o `csrf` do contexto é o token de pré-sessão do botão de
+    # tema. Tem de estar em `base` **antes** de construir a resposta:
+    # `TemplateResponse` renderiza no construtor, portanto pô-lo depois é
+    # tarde e o campo `hidden` sai vazio. E o cookie tem de sair na mesma
+    # resposta, pelo mesmo motivo — o formulário sem token não valida nada, e
+    # era isso que o F-01 encontrou: um botão de tema que não fazia nada.
+    sem_sessao = base.get("sessao") is None
+    if sem_sessao and not base.get("csrf"):
+        # Só quando a página não trouxe o seu. A página de login e a de
+        # convite já põem o `csrf` delas no contexto, e sobrepor aqui punha o
+        # token do tema no formulário de login — que depois era rejeitado como
+        # CSRF inválido e o utilizador nunca entrava. (Erro meu, apanhado pela
+        # suite: 20 testes vermelhos.) O token do tema é o mesmo valor, e é
+        # por isso que o cookie de baixo pode ser posto com o que já está.
+        base["csrf"] = _token_de_tema(request)
+
+    response = templates.TemplateResponse(
         request=request, name=template, context=base, status_code=status_code
     )
+    if sem_sessao:
+        _com_token_de_tema(request, response, base["csrf"])
+    return response
+
+
+def _token_de_tema(request: Request) -> str:
+    """Token de CSRF para o `POST` do botão de tema, sem sessão.
+
+    Reutiliza o do cookie quando já existe um válido, e gera um novo quando não
+    existe. Sem a reutilização, abrir a página de login e o editor em dois
+    separadores daria ao segundo um token novo, e o botão de tema do primeiro
+    deixaria de funcionar — que é a mesma razão de `ensure_pre_session_csrf`.
+    """
+    from . import security
+    from .web import PRE_SESSION_COOKIES, _is_opaque_token
+
+    existente = request.cookies.get(PRE_SESSION_COOKIES["tema"], "")
+    return existente if _is_opaque_token(existente) else security.new_token(24)
+
+
+def _com_token_de_tema(request: Request, response: Response, token: str) -> Response:
+    """Põe o cookie de CSRF do botão de tema na resposta."""
+    from .web import PRE_SESSION_COOKIES, get_settings
+
+    settings = get_settings(request)
+    response.set_cookie(
+        PRE_SESSION_COOKIES["tema"],
+        token,
+        max_age=3600,
+        httponly=True,
+        samesite="lax",
+        secure=settings.secure_cookies,
+        path=settings.url("/"),
+    )
+    return response

@@ -76,6 +76,59 @@ def editor(request: Request, conn: Db, session: Active) -> Response:
     return page(request, "editor.html", context)
 
 
+@router.get("/preview-documento")
+async def preview_document(
+    request: Request,
+    conn: Db,
+    session: Active,
+    fields: str = "",
+    theme: str = "dark",
+) -> Response:
+    """A assinatura, num documento com a CSP certa, para o `iframe` do preview.
+
+    **Porque uma rota e não um `blob:`.** O preview vivia num `iframe sandbox`
+    alimentado por uma `blob:` URL, e o browser dá ao documento `blob:` a CSP
+    de quem o criou. Com `style-src 'self'`, a assinatura aparecia sem uma cor
+    sequer: Times New Roman, preto, com os acentos a sair como `TÃ©cnica`
+    porque o `Blob` não levava charset. Um `<meta http-equiv="Content-Security-
+    Policy">` dentro do próprio blob **não** resolve — foi medido em Chromium e
+    as políticas juntam-se em vez de se substituir, pelo que a mais restritiva
+    ganha. (F-04)
+
+    Esta rota dá ao documento a sua própria CSP, e isso tem duas consequências
+    boas: o preview mostra a assinatura como ela vai sair, e a aplicação deixa
+    de precisar de `blob:` em `frame-src` — menos superfície, não mais.
+
+    Os campos vão na query string porque o `iframe` só sabe carregar um `GET`.
+    A query é da assinatura e nada mais: o `maxlength` dos campos limita o
+    tamanho, e o texto é escapado pelo mesmo renderer que a exportação usa.
+
+    Exige sessão como a exportação. Um endpoint público que transformasse
+    query em HTML seria uma superfície que não precisava de existir.
+    """
+    settings = request.app.state.settings
+    signature = _load_signature(conn, session.user_id)
+    built = _build(
+        settings,
+        _form_fields(fields),
+        theme,
+        _load_logo(settings, conn, signature),
+    )
+    return Response(
+        content=_standalone_document(built["html"], preview=True),
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Cache-Control": "no-store",
+            # A CSP vai no header **e** no `<meta>` do documento, porque um
+            # `<meta>` não substitui o header: juntam-se e a mais restritiva
+            # ganha. Sem esta linha, o preview herda a `style-src 'self'` da
+            # aplicação e a assinatura volta a aparecer sem estilos — que é o
+            # sintoma que o F-04 mediu.
+            "Content-Security-Policy": CSP_PREVIEW,
+        },
+    )
+
+
 @router.post("/preview")
 async def preview(
     request: Request,
@@ -310,21 +363,53 @@ def _export(request: Request, conn: sqlite3.Connection, session: Session, kind: 
     )
 
 
-def _standalone_document(fragment: str) -> str:
-    """Envolve o fragmento num documento completo para o ficheiro `.html`.
+#: As duas políticas de um documento gerado. Fonte única para o `<meta>` dentro
+#: do documento e para o header da resposta do preview — que são coisas
+#: diferentes e não podem divergir.
+#:
+#: `default-src 'none'` sem `style-src` é o mesmo que `style-src 'none'` por
+#: queda da cadeia, e matava os estilos do próprio documento, incluindo o
+#: `background:#ffffff` do `<body>` duas linhas mais abaixo. O ficheiro que o
+#: utilizador descarrega para conferir não se mostrava. (F-08)
+#:
+#: A diferença é `frame-ancestors`. O ficheiro exportado abre-se num separador
+#: e ninguém o engaveta: `'none'` é o mais apertado. O documento do preview
+#: **tem** de ser engavetado, e `frame-ancestors 'none'` recusa-o antes de o
+#: mostrar. (F-04)
+#:
+#: `style-src 'unsafe-inline'` é seguro nos dois: todo o texto passa por
+#: `html.escape` (`renderer._t`), não há script nenhum, e mesmo que alguém
+#: introduza um, `script-src 'none'` mata-o.
+CSP_EXPORTACAO = (
+    "default-src 'none'; script-src 'none'; connect-src 'none';"
+    " style-src 'unsafe-inline'; img-src https: http:; base-uri 'none';"
+    " form-action 'none'; frame-ancestors 'none'"
+)
+CSP_PREVIEW = (
+    "default-src 'none'; script-src 'none'; connect-src 'none';"
+    " style-src 'unsafe-inline'; img-src 'self' https: http:; base-uri 'none';"
+    " form-action 'none'; frame-ancestors 'self'"
+)
+
+
+def _standalone_document(fragment: str, *, preview: bool = False) -> str:
+    """Envolve o fragmento num documento completo, com a CSP certa para ele.
 
     O fragmento em si não tem `<html>` porque vai para dentro de um email. Para
-    o ficheiro descarregado ser abrível, precisa de um documento. O `<meta
-    http-equiv="Content-Security-Policy">` é o mesmo princípio: um ficheiro
-    de assinatura não deve carregar scripts nem fazer pedidos a terceiros.
+    o ficheiro descarregado — e para o `iframe` do editor — precisa de um
+    documento. O `<meta http-equiv>` não substitui o header da resposta: as
+    políticas juntam-se e a mais restritiva ganha, pelo que a rota do preview
+    também põe a CSP no header. Este `<meta>` cobre o ficheiro exportado, que
+    deixa de ter header quando é aberto do disco.
     """
+    csp = CSP_PREVIEW if preview else CSP_EXPORTACAO
+    titulo = "Pré-visualização da assinatura" if preview else "Assinatura de email"
     return (
         '<!doctype html>\n<html lang="pt-PT">\n<head>\n'
         '<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
-        '<meta http-equiv="Content-Security-Policy"'
-        " content=\"default-src 'none'; img-src https: http:\">\n"
-        "<title>Assinatura de email</title>\n</head>\n"
+        f'<meta http-equiv="Content-Security-Policy" content="{csp}">\n'
+        f"<title>{titulo}</title>\n</head>\n"
         '<body style="margin:0;padding:24px;background:#ffffff;">\n'
         f"{fragment}\n</body>\n</html>\n"
     )

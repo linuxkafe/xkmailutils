@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import sqlite3
 from typing import Annotated
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse, Response
@@ -18,6 +19,7 @@ from .. import security
 from ..config import Settings
 from ..templates import page
 from ..web import (
+    THEME_COOKIE,
     Session,
     clear_session_cookie,
     client_ip,
@@ -190,6 +192,73 @@ def verify_submit(
     )
     response.delete_cookie(CHALLENGE_COOKIE, path=settings.url("/verificar"))
     return response
+
+
+@router.post("/tema")
+def set_theme(
+    request: Request,
+    conn: Db,
+    theme: Annotated[str, Form()] = "",
+    csrf_token: Annotated[str, Form()] = "",
+) -> Response:
+    """Alterna o tema da aplicação e devolve o utilizador à página de onde veio.
+
+    Existe porque o tema tem de ser mudável **a partir da interface**. O
+    mecanismo estava correcto e era verificado por testes desde que o F-01 foi
+    achado — o cookie era lido e reescrito pelo middleware — mas nada na
+    interface o escrevia, pelo que a única forma de ter a aplicação em claro
+    era fabricar o cookie à mão nas devtools. Um mecanismo perfeito que o
+    utilizador não consegue acender não é uma feature. (F-01)
+
+    Aceita sessão ou pré-sessão, porque o botão está no cabeçalho de todas as
+    páginas e a página de login é justamente onde se quer poder escolher o
+    tema. Um valor fora de `dark`/`light` é ignorado em vez de dar 400: o
+    middleware já normaliza para `dark`, e um `POST` malformado não é motivo
+    para uma página de erro.
+    """
+    settings = get_settings(request)
+    session = current_session(conn, settings, request)
+    if session is not None:
+        autorizado = csrf_is_valid(session, csrf_token)
+    else:
+        autorizado = pre_session_csrf_ok(request, "tema", csrf_token)
+    if not autorizado:
+        return ir(request, _anterior(request, "/entrar?erro=csrf"))
+
+    alvo = _anterior(request, "/assinatura")
+    if theme in {"dark", "light"}:
+        response = ir(request, f"{alvo}")
+        response.set_cookie(
+            THEME_COOKIE,
+            theme,
+            max_age=365 * 86400,
+            samesite="lax",
+            secure=settings.secure_cookies,
+            path=settings.url("/"),
+        )
+        return response
+    return ir(request, alvo)
+
+
+def _anterior(request: Request, omissao: str) -> str:
+    """Para onde voltar depois de um `POST`, como caminho **relativo ao prefixo**.
+
+    Só se usa o *caminho* do `Referer`, nunca o host: o destino é reconstruído
+    por `ir()`, que aplica o nosso próprio `public_base_url`, portanto um
+    `Referer` forjado não leva o utilizador para fora. E o caminho vem com o
+    prefixo, porque o browser não sabe que o aplicámos — devolvê-lo como está
+    punha `/xkmailutils` duas vezes, que foi o primeiro bug desta função.
+
+    O `Referer` não é confiável como decisão: um `Referer` ausente ou de outra
+    origem leva à omissão, e é para isso que a omissão existe. (F-01)
+    """
+    prefixo = get_settings(request).path_prefix
+    caminho = urlsplit(request.headers.get("referer", "")).path
+    if not caminho.startswith("/") or caminho.startswith("//"):
+        return omissao
+    if prefixo and caminho.startswith(prefixo + "/"):
+        caminho = caminho[len(prefixo) :]
+    return caminho if caminho.startswith("/") else omissao
 
 
 @router.post("/sair")

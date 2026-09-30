@@ -75,14 +75,27 @@
 .mt-3 { margin-top: var(--sp-3); } /* 16px */
 .mt-4 { margin-top: var(--sp-4); } /* 24px */
 .mt-5 { margin-top: var(--sp-5); } /* 32px */
-.mt-1-b { margin-top: var(--sp-2); margin-bottom: var(--sp-2); }
 .ma-2 { margin: 12px 0 0; }
-.ma-3 { margin: var(--sp-3) 0 0; }
-.ma-3-b { margin: var(--sp-3) 0 var(--sp-2); }
 .mb-2 { margin-bottom: var(--sp-2); }
 .ta-right { text-align: right; }
 .ta-center { text-align: center; }
-.w-full { width: 100%; }
+
+/* O interruptor do tema. Dois botões com `aria-pressed`, e não um checkbox:
+   são dois estados, e o utilizador quer ver os dois. O que está activo é o
+   que tem a marca de verificação, para não depender só da cor. */
+.tema-switch {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.tema-switch__form {
+  display: inline;
+}
+
+.tema-switch__botao[aria-pressed="true"] {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
 .hidden { display: none; }
 
 /* O denominador " / 100" é menor e menos pesado do que o número ao lado. */
@@ -185,9 +198,6 @@ body {
 
 /* A app funciona sem JavaScript. `display: none` sem `no-js` é o inverso do
  * que se quer: sem JS, o conteúdo tem de continuar visível. */
-.no-js-only {
-  display: none;
-}
 
 a {
   color: var(--link);
@@ -560,6 +570,15 @@ textarea:focus {
  * cobre os 101 valores: se um dia o score passar a fraccionário, esse teste
  * falha em vez de a barra passar a mentir. */
 
+/* Um estado sem nome não é um score. Sem cor e sem barra, para não treinar o
+ * olho a ler verde antes de haver assinatura. (F-12) */
+.score[data-nivel="VAZIO"] .score__fill { background: var(--border); }
+.score[data-nivel="VAZIO"] .score__value { color: var(--text-soft); }
+.score[data-nivel="VAZIO"] .score__badge {
+  color: var(--text-soft);
+  border-color: var(--border);
+}
+
 .score[data-nivel="SEGURO"] .score__fill { background: var(--ok-fill); }
 .score[data-nivel="SEGURO"] .score__value { color: var(--ok-text); }
 .score[data-nivel="ATENCAO"] .score__fill { background: var(--warn-fill); }
@@ -771,29 +790,9 @@ textarea:focus {
 }
 
 /* ------------------------------------------------------------- preview --- */
-.preview {
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  padding: var(--sp-4);
-  background: #ffffff;
-  color: #212121;
-  overflow-x: auto;
-  min-height: 120px;
-}
 
-.preview--light {
-  background: #ffffff;
-}
 
-.preview--dark {
-  background: #1a1a1a;
-  color: #e0e0e0;
-}
 
-.preview__empty {
-  color: var(--text-soft);
-  font-style: italic;
-}
 
 textarea.output {
   font-family: var(--font-mono);
@@ -865,9 +864,6 @@ details.disclosure > *:not(summary) {
   margin-top: var(--sp-2);
 }
 
-.link-rows > * + * {
-  margin-top: var(--sp-2);
-}
 
 .centered-page {
   max-width: 420px;
@@ -875,15 +871,6 @@ details.disclosure > *:not(summary) {
   padding-top: var(--sp-6);
 }
 
-.code-display {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  align-items: center;
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  color: var(--text-soft);
-}
 
 .visually-hidden {
   position: absolute;

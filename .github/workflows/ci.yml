@@ -15,6 +15,13 @@ jobs:
       - name: Setup
         run: make setup
 
+      # `make check` inclui `e2e-check`, que precisa do Chromium. `make setup`
+      # instala o pacote `playwright` mas não o browser — este passo é o que
+      # separa "o pacote está instalado" de "o browser existe". Sem ele a CI
+      # fica vermelha no primeiro run, que é o F-03. (F-03)
+      - name: Install browser
+        run: python3 -m playwright install --with-deps chromium
+
       - name: Lint
         run: make lint
 

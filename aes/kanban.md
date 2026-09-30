@@ -35,7 +35,7 @@ make run            # http://127.0.0.1:8000
 | ID | Título | Prioridade | Estado |
 |----|--------|-----------|--------|
 | T001 | Gerador de assinaturas sem padrões de spam, com 2F por email | P0 | done |
-| T008 | Playwright sobre o fluxo login → 2F → editor → score → exportar | P1 | done |
+| T008 | Playwright sobre o fluxo login → 2F → editor → score → exportar | P1 | review: 2 rondas |
 
 ## Backlog
 
@@ -49,7 +49,9 @@ que o precise ou um requisito em `docs/REQUIREMENTS.md`.
 | Logótipo não é redimensionado (sem Pillow) | `images.py` | Imagem grande num `.html` grande. O utilizador é avisado no upload; o score penaliza acima de 30 KiB. |
 | Impressão digital de dispositivo é User-Agent + Accept-Language | `security.py` | Saltável por quem conheça o browser da vítima. Aceito: o 2F protege o acesso, não a phishing. |
 | `rodolfomatos/pdftools` não auditado (privado) | `docs/DESIGN.md` | O layout segue a convenção AES. Declarado como divergência. |
-| Testes E2E não cobrem o caminho de convite nem o de administração | `e2e/` | O suite cobre login, 2F, editor, score, exportação e o analisador. A gestão de utilizadores (convites, revogação) continua só por HTTP. |
+| Testes E2E não cobrem o caminho de convite nem o de administração | `e2e/` | O suite cobre login, 2F, editor, score, exportação, tema e analisador. A gestão de utilizadores (convites, revogação) continua só por HTTP. |
+| O preview recarrega o `iframe` a cada alteração | `app.js:setPreview` | Visível como um piscar leve a 350 ms de distância. Escolha do dono entre rota sem estado (mais simples) e cache no servidor (sem piscar). Registado, não resolvido. |
+| A revisão de peer ainda não foi executada por um humano | `aes/peer-reviews/T008/` | O veredicto é REJECT até `human-validation.sh` ser corrido por alguém que não seja o autor do candidato. |
 | Contraste da `--text-soft` em light mode por confirmar | `app.css` | `#555555` sobre `#f5f5f5` dá 6.8:1 — passa. Em `--surface-elevated` (`#ffffff`) dá 7.4:1. OK, mas rever se a superfície mudar. |
 
 ## Notas de decisões

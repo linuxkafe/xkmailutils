@@ -117,7 +117,7 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
             # (a largura da barra de score) estão em `app.css`, indexados por
             # `data-score`.
             "default-src 'self'; img-src 'self' https: data:; style-src 'self'; "
-            "script-src 'self'; form-action 'self'; frame-src 'self' blob:; "
+            "script-src 'self'; form-action 'self'; frame-src 'self'; "
             "frame-ancestors 'none'; base-uri 'none'",
         )
         if resolved.is_production:
@@ -155,7 +155,16 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
         except _Redirect as jump:
             response = RedirectResponse(url=jump.url, status_code=303)
 
-        if not request.url.path.endswith(_CONTEXTLESS_SUFFIXES):
+        # Só se escreve o cookie se a rota não o ter posto já. `set_cookie`
+        # acrescenta um `Set-Cookie` e o último ganha: uma rota que mudasse o
+        # tema seria sobreposta pelo valor antigo do pedido, e o botão não
+        # fazia nada. Foi o que aconteceu na primeira implementação do
+        # `POST /tema` — o `POST` punha `light` e o middleware punha `dark` logo
+        # a seguir, e o formulário parecia funcionar e não fazia. (F-01)
+        ja_posto = any(
+            valor.startswith(f"{THEME_COOKIE}=") for valor in response.headers.getlist("set-cookie")
+        )
+        if not ja_posto and not request.url.path.endswith(_CONTEXTLESS_SUFFIXES):
             # Path com o prefixo: com `path="/"`, o cookie de tema seria
             # enviado a todos os serviços do mesmo host, e o `path` do
             # `delete_cookie` teria de bater certo para o logout funcionar.

@@ -39,9 +39,14 @@ MAILUTILS_MAIL_BACKEND=console
 ## Verificar
 
 ```bash
-make check     # O GATE: docs + código + testes com cobertura + lint + formato
+make check     # O GATE: docs + código + testes com cobertura + lint + formato + E2E
 make test      # pytest
-make verify TICKET=T001
+# `make check` inclui o suite E2E, que precisa do Chromium. `make setup`
+# instala o pacote `playwright` mas não o browser:
+#   python3 -m playwright install chromium
+# `make doctor` diz o que falta. (F-13)
+
+make verify TICKET=T001   # lê os critérios do ticket; NÃO é um gate
 make doctor    # estado do ambiente
 ```
 

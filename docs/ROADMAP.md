@@ -36,7 +36,13 @@ bugs de browser em código que os 493 testes por HTTP davam por bom. O mais
 grave era o formulário do editor, que **não submeteu nada** — os campos
 `type="url"` exigiam esquema e o produto manda escrever o domínio sem
 esquema, pelo que `checkValidity()` devolvia `false` e o browser recusava o
-POST sem mostrar erro. Ver `aes/tickets/T008-playwright-e2e.md`.
+POST sem mostrar erro.
+
+Depois passou por uma revisão `aes-peer-review` (multi-perspectiva, 4
+personas) que encontrou mais 14: **3 BLOCKER**, entre eles a assinatura por
+omissão a ser ilegível no cliente de email (contraste 1.14:1) e a CI não
+instalar o browser. Todos corrigidos, cada um com mutação provada. Ver
+`aes/tickets/T008-playwright-e2e.md` e `aes/peer-reviews/T008/`.
 
 ### T011 — Logótipo para ecrãs escuros
 `prefers-color-scheme: dark` no email não é fiável. A maioria dos clientes

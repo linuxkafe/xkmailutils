@@ -299,3 +299,70 @@ class TestReporting:
         report = spam.score_signature(html)
         assert report["categoria"] != "CRITICO", "este caso deve ficar em ELEVADO"
         assert report["exportacao_bloqueada"] is True
+
+
+class TestOScoreEInteiro:
+    """O score tem de ser um `int` de 0 a 100. Não uma promessa no docstring.
+
+    A barra de score é uma regra de CSS por valor, indexada por `data-score`:
+    `app.css` tem 101 regras, uma por cada score de 0 a 100, porque `attr()`
+    não devolve percentagens e a CSP bloqueia `style=""`. Se o score passar a
+    fraccionário, `data-score="42.5"` não casa com nenhuma regra e a barra
+    **esvazia**.
+
+    Uma revisão mutou `analyzer/scoring.py` para devolver um `float` e esta
+    suite toda passou. O teste da completude da tabela contava 101 números no
+    ficheiro — e continuava a contar com o score quebrado, porque contava
+    texto do CSS e não o score de ninguém. A garantia escrita em
+    `test_browser_regressions.py` e no ticket T008 era verdadeira no momento em
+    que a escrevi e falsa como teste. (F-06)
+    """
+
+    @pytest.mark.parametrize("tema", ["dark", "light"])
+    def test_a_assinatura_da_um_int(self, tema: str) -> None:
+        from mailutils.config import load_settings
+        from mailutils.signatures import renderer
+
+        settings = load_settings(env="development")
+        campos = {
+            "name": "Ana Silva",
+            "role": "Engenheira de Software",
+            "company": "Exemplo, Lda.",
+            "email": "ana@exemplo.pt",
+            "website": "exemplo.pt",
+            "note": "Documentos em http://exemplo.pt",
+        }
+        dados = renderer.build_signature_data(campos, settings, theme=tema)
+        relatorio = spam.score_signature(
+            renderer.render_html(dados, settings), renderer.render_plain(dados, settings)
+        )
+        score = relatorio["score"]
+        assert isinstance(score, int), f"o score é {type(score).__name__}, não int: {score!r}"
+        assert 0 <= score <= 100, f"o score saiu do intervalo: {score!r}"
+
+    def test_o_analisador_da_um_int(self) -> None:
+        from mailutils.analyzer import reader, scoring
+
+        email = reader.parse(
+            "From: ola@exemplo.pt\r\nSubject: Oferta\r\nTo: ana@exemplo.pt\r\n\r\n"
+            "Chamada à acção. Desconto de 90% só hoje. http://exemplo.pt/oferta"
+        )
+        relatorio = scoring.analyse(email)
+        score = relatorio["score"]
+        assert isinstance(score, int), f"o analisador devolve {type(score).__name__}: {score!r}"
+        assert 0 <= score <= 100
+
+    def test_o_contrato_diz_int(self) -> None:
+        """O tipo é declarado, não deduzido.
+
+        Se alguém mudar a anotação de `pontos: int` ou a clampagem para `float`,
+        este teste apanha o que a barra de score não conseguiria.
+        """
+        import inspect
+
+        fonte = inspect.getsource(spam)
+        assert "pontos: int" in fonte, "os pontos das regras deixaram de ser inteiros"
+        assert "score = max(0, min(100, total))" in fonte, (
+            "a clampagem do score mudou de forma; a barra de score em `app.css` "
+            "indexa por valor e só cobre inteiros de 0 a 100"
+        )

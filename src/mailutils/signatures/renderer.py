@@ -169,6 +169,39 @@ def build_signature_data(raw: dict, settings: Settings, theme: str | None = None
     return data
 
 
+def _luminance(colour: str) -> float:
+    """Luminância relativa de um `#rrggbb`. WCAG 2.1."""
+    hexa = colour.lstrip("#")
+    canais = [int(hexa[i : i + 2], 16) / 255 for i in (0, 2, 4)]
+    lineares = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in canais]
+    return 0.2126 * lineares[0] + 0.7152 * lineares[1] + 0.0722 * lineares[2]
+
+
+def _contraste(a: str, b: str) -> float:
+    """Razão de contraste entre duas cores, de 1.0 a 21.0."""
+    la, lb = _luminance(a), _luminance(b)
+    claro, escuro = max(la, lb), min(la, lb)
+    return (claro + 0.05) / (escuro + 0.05)
+
+
+def _precisa_de_fundo(theme: Theme) -> bool:
+    """Se um tema tem de levar o seu fundo ou pode ficar transparente.
+
+    Uma assinatura transparente é o que se quer num cliente de email claro: o
+    texto adota a cor do fundo do leitor. Mas um tema escuro sem fundo é
+    **ilegível** — foi o que aconteceu: o tema `dark` tinha `text="#f0f0f0"` e
+    o `background="#1a1a1a"` declarado nunca era emitido, contra o branco de um
+    Thunderbird ou um Outlook dava 1.14:1, e a aplicação dizia «0 / 100
+    SEGURO» por cima de uma assinatura que o destinatário não via.
+
+    A regra é por luminância, não por nome: se o texto do tema for mais claro
+    que o fundo declarado, o fundo tem de ir junto. Um tema claro fica
+    transparente de propósito — pôr `#ffffff` num leitor com fundo colorido
+    faria a assinatura aparecer como um rectângulo branco, que é pior.
+    """
+    return _luminance(theme.text) > _luminance(theme.background)
+
+
 def render_html(data: SignatureData, settings: Settings) -> str:
     """Devolve o HTML da assinatura. É isto, byte a byte, que vai para o email."""
     theme = THEMES[data.theme]
@@ -243,9 +276,24 @@ def render_html(data: SignatureData, settings: Settings) -> str:
         )
 
     body = stack(identity) + stack(contact_rows) + note
+
+    # O fundo do tema, quando o tema é escuro. Vai em dois sítios de propósito:
+    # `background` no `<div>` para os clientes modernos, e `bgcolor` no
+    # `<table>` porque o Word engine do Outlook ignora `background` num `<div>`
+    # e só honra o atributo. Sem os dois, o tema escuro sai com texto claro
+    # sobre o branco do cliente — 1.14:1, invisível. (F-02)
+    opaco = _precisa_de_fundo(theme)
+    fundo = f"background:{theme.background};" if opaco else ""
+    # O padding só existe quando há fundo: texto colado à borda de um bloco
+    # escuro parece uma caixa mal feita, e texto sem fundo não precisa dele.
+    padding = "padding:10px 12px;" if opaco else ""
+    cor_tabela = f' bgcolor="{theme.background}"' if opaco else ""
+
     parts = [
-        '<table role="presentation" cellpadding="0" cellspacing="0" border="0" '
-        'style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;">',
+        '<table role="presentation" cellpadding="0" cellspacing="0" border="0"'
+        f"{cor_tabela} "
+        'style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;'
+        f'{fundo}">',
         "<tr>",
         logo_cell,
         cell(body),
@@ -256,7 +304,8 @@ def render_html(data: SignatureData, settings: Settings) -> str:
 
     return (
         '<div style="font-family:Arial,Helvetica,sans-serif;'
-        f'color:{theme.text};font-size:13px;line-height:18px;">'
+        f"color:{theme.text};font-size:13px;line-height:18px;{fundo}{padding}"
+        f'display:inline-block;">'
         f"{html}{SIGNATURE_MARKER}</div>"
     )
 

@@ -43,6 +43,7 @@
       {% if sessao.is_admin %}
       <a href="{{ raiz }}/admin" {% if rota == (raiz + '/admin') %}aria-current="page"{% endif %}>Administração</a>
       {% endif %}
+      {% include "_tema.html" %}
       <form method="post" action="{{ raiz }}/sair" class="actions">
         <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
         <button type="submit" class="btn btn--sm btn--secondary">Sair</button>
@@ -50,6 +51,7 @@
     </nav>
     {% else %}
     <nav class="nav" aria-label="Navegação principal">
+      {% include "_tema.html" %}
       <a href="{{ raiz }}/entrar">Entrar</a>
     </nav>
     {% endif %}

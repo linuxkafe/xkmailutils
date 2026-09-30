@@ -67,7 +67,6 @@ RUN useradd --system --create-home --uid 10001 mailutils \
 # A única cópia do código na imagem é a de `site-packages`.
 COPY --from=build /venv /venv
 WORKDIR /app
-COPY --chown=mailutils:mailutils docs/ ./docs/
 COPY --chown=mailutils:mailutils README.md LICENSE ./
 
 USER mailutils

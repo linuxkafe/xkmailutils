@@ -242,6 +242,11 @@ PRE_SESSION_COOKIES = {
     # formulário anterior no mesmo fluxo.
     "verify": "mailutils_login_csrf",
     "invite": "mailutils_guest_csrf",
+    # O botão de tema está no cabeçalho de *todas* as páginas, incluindo as
+    # que não têm sessão. Sem este propósito, quem chega à página de login não
+    # tinha token nenhum para mandar um `POST`, e o tema ficava inacessível a
+    # toda a gente que ainda não entrou. (F-01)
+    "tema": "mailutils_tema_csrf",
 }
 
 

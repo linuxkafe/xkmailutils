@@ -152,6 +152,15 @@ barra de score passou a mostrar 100% com um score de 0.
 | `.preview__frame` `.logo__thumb` | molduras de imagem com fundo branco |
 | `.otp-code` | o campo do segundo factor, monoespaçado e com tracking |
 
+**A moldura do preview é branca de propósito.** O preview mostra a assinatura
+como ela aparece no cliente de email, e o cliente de email é claro. Um painel
+escuro seria mais bonito e mentiroso. O que torna a decisão legível é a
+moldura ter bordo nos dois temas, para se perceber que é uma superfície e não
+um bug. O documento do preview é servido por
+`/assinatura/preview-documento` com uma CSP própria, e não por um `blob:`: um
+documento `blob:` herda a CSP de quem o cria, e a assinatura aparecia sem uma
+cor sequer. (F-04)
+
 A largura da barra de score é a única coisa que o CSS não consegue expressar a
 partir de um valor do servidor: `width: attr(data-score number)%` foi medido
 em Chromium e dá sempre a largura do contentor. Como o score é um inteiro de

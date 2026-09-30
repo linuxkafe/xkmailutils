@@ -294,3 +294,98 @@ class TestClientInstructions:
 
 def render_plain(settings: config.Settings, **fields) -> str:
     return renderer.render_plain(build(settings, **fields), settings)
+
+
+class TestAssinaturaLegivelNoClienteDeEmail:
+    """A assinatura tem de se ler no cliente de email, não no preview.
+
+    Este ficheiro mede o **HTML emitido**, não o que o `THEMES` declara. A
+    diferença é a que matou o F-02: `Theme(background="#1a1a1a")` estava
+    declarado, o dataclass tinha o campo, e o renderer nunca o emitia. Um
+    teste sobre a configuração passava; o texto que saía no email era
+    `color:#f0f0f0` sem fundo, contra o branco de um Thunderbird ou um
+    Outlook, a **1.14:1**.
+
+    O fundo de referência é o branco porque é o que um cliente de email dá
+    por omissão. Um tema escuro tem de levar o seu fundo; um tema claro fica
+    transparente de propósito, para não virar um rectângulo branco num leitor
+    com fundo colorido.
+    """
+
+    @staticmethod
+    def _fundo_efectivo(html: str) -> str:
+        """O fundo que o browser vai ver, lido do HTML emitido."""
+        wrapper = re.search(r'<div style="([^"]*)"', html)
+        assert wrapper, "a assinatura não tem <div> wrapper"
+        declarado = re.search(r"background:(#[0-9a-fA-F]{6})", wrapper.group(1))
+        return declarado.group(1) if declarado else "#ffffff"
+
+    @pytest.mark.parametrize("tema", sorted(renderer.THEMES))
+    def test_contraste_do_nome_contra_o_fundo_do_cliente(
+        self, settings: config.Settings, tema: str
+    ) -> None:
+        html = render(settings, name="Alexandra Ferreira", theme=tema)
+        theme = renderer.THEMES[tema]
+        razao = renderer._contraste(theme.text, self._fundo_efectivo(html))
+        assert razao >= 4.5, (
+            f"tema {tema!r}: texto {theme.text} sobre "
+            f"{self._fundo_efectivo(html)} dá {razao:.2f}:1. "
+            f"O destinatário não lê a assinatura."
+        )
+
+    @pytest.mark.parametrize("tema", sorted(renderer.THEMES))
+    def test_todo_o_texto_do_tema_passa_4_5(self, settings: config.Settings, tema: str) -> None:
+        """Não só o nome: cargo, empresa e morada usam `muted`.
+
+        Um tema pode ter o nome legível e o resto não. Foi o que aconteceu com
+        `#b0b0b0` sobre branco.
+        """
+        html = render(
+            settings,
+            name="Ana",
+            role="Engenheira",
+            company="Exemplo",
+            address="Rua X, Porto",
+            theme=tema,
+        )
+        fundo = self._fundo_efectivo(html)
+        theme = renderer.THEMES[tema]
+        for cor in sorted({theme.text, theme.muted}):
+            razao = renderer._contraste(cor, fundo)
+            assert razao >= 4.5, f"tema {tema!r}: {cor} sobre {fundo} dá {razao:.2f}:1"
+
+    def test_tema_escuro_leva_o_fundo_em_dos_sitios(self, settings: config.Settings) -> None:
+        """`background` no `<div>` e `bgcolor` no `<table>`.
+
+        Os dois, de propósito: o Word engine do Outlook ignora `background` num
+        `<div>`. Com um só dos dois, a assinatura continua invisível no Outlook
+        — que é o cliente onde a maior parte das pessoas a vai ver.
+        """
+        html = render(settings, name="Ana", theme="dark")
+        assert "background:#1a1a1a" in html, "o `<div>` não leva o fundo do tema"
+        assert 'bgcolor="#1a1a1a"' in html, (
+            "o `<table>` não leva bgcolor — o Outlook não lê `background` num `<div>`"
+        )
+
+    def test_tema_claro_fica_transparente(self, settings: config.Settings) -> None:
+        """Um bloco branco num leitor com fundo colorido é pior do que nada."""
+        html = render(settings, name="Ana", theme="light")
+        assert "background:#ffffff" not in html
+        assert "bgcolor=" not in html
+
+    def test_o_texto_do_utilizador_nao_injecta_um_fundo(self, settings: config.Settings) -> None:
+        """Emitir `background` dá ao renderer um atributo novo. Não dá um sink.
+
+        O nome, o cargo e a nota passam por `html.escape` (`renderer._t`), pelo
+        que um utilizador não fecha a tabela nem escreve um atributo. Este
+        teste existe porque a correcção do F-02 introduziu
+        `display:inline-block` e um `background` no wrapper — e a pergunta
+        «isto abre uma porta?» tem de ter uma resposta verificável.
+        """
+        html = render(
+            settings,
+            name='</span><div style="background:url(https://exemplo.pt/x)">injecção</div>',
+            theme="dark",
+        )
+        assert '<div style="background:url' not in html
+        assert "&lt;div" in html, "o input do utilizador não foi escapado"

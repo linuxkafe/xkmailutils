@@ -1,6 +1,6 @@
 # Contexto de build mínimo.
 #
-# O objectivo é duplo:变小 a imagem, e não enviar o `.env` de ninguém para o
+# O objectivo é duplo: diminuir a imagem, e não enviar o `.env` de ninguém para o
 # registo de contentores. Um `.env` num layer de build fica no histórico da
 # imagem para sempre, mesmo que uma camada posterior o apague.
 

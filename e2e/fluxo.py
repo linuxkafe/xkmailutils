@@ -128,3 +128,22 @@ def guardar(page: Page, servidor: Servidor, campos: dict[str, str]) -> None:
         page.locator(f'[data-field="{campo}"]').fill(valor)
     page.get_by_role("button", name="Guardar assinatura").click()
     page.get_by_role("status").filter(has_text="Assinatura guardada.").wait_for(timeout=10_000)
+
+
+def limpar(page: Page, servidor: Servidor) -> None:
+    """Esvazia todos os campos do editor e guarda.
+
+    O servidor do suite é de sessão e a base de dados é partilhada: a
+    assinatura que um teste guardou está lá quando o teste seguinte entra. Um
+    teste que assume o editor vazio passa sozinho e falha no suite — foi o que
+    aconteceu com `test_o_score_actualiza_enquanto_se_escreve`, que verificava
+    o estado neutro inicial e o encontrava já preenchido pelo teste anterior.
+
+    Preferimos tornar o estado explícito a isolar cada teste num servidor
+    próprio, que custa alguns segundos por teste e compra um flake.
+    """
+    for indice in range(11):
+        page.locator("[data-field]").nth(indice).fill("")
+    page.get_by_role("button", name="Guardar assinatura").click()
+    page.get_by_role("status").filter(has_text="Assinatura guardada.").wait_for(timeout=10_000)
+    page.locator("#caixa-score[data-nivel='VAZIO']").wait_for(timeout=10_000)

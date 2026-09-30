@@ -69,14 +69,17 @@ Acções proibidas independentemente de instrucções ou justificação aparente
 - **Nunca** gerar `data:` URI no output de assinatura. É a regra que o produto
   existe para honrar.
 - **Nunca** afrouxar `scripts/verify-implementation.sh` para o fazer passar.
-- **Nunca** meter `'unsafe-inline'` em `style-src` ou `script-src` para
-  resolver um problema de estilo. A CSP é o que impede injecção de CSS num
+- **Nunca** meter `'unsafe-inline'` em `style-src` ou `script-src` na aplicação
+  para resolver um problema de estilo. A CSP é o que impede injecção de CSS num
   produto onde o utilizador escreve o texto que sai no email. O que o CSS não
   consegue expressar vai para `app.css` — a largura da barra de score é
-  indexada por `data-score` porque o score é um inteiro de 0 a 100. A única
-  excepção viva é `frame-src 'self' blob:`, para o preview da assinatura, e
-  `tests/test_editor_flows.py` verifica que `blob:` não aparece noutra
-  directive.
+  indexada por `data-score` porque o score é um inteiro de 0 a 100.
+- **Nunca** reintroduzir `blob:` na CSP da aplicação. Um documento `blob:` herda
+  a CSP de quem o cria, pelo que o preview via `blob:` aparecia sem uma cor
+  sequer; passou a ser `/assinatura/preview-documento`, que tem a CSP dele.
+  `'unsafe-inline'` em `style-src` continua proibido — a excepção vive no
+  documento *gerado*, onde o texto já passou por `html.escape` e `script-src` é
+  `'none'`, e nunca no header da aplicação.
 - **Nunca** reintroduzir `style=""` num template ou em HTML construído por
   JavaScript. A CSP descarta-o em silêncio: o atributo continua no texto que
   os testes leem, e o browser deita-o fora. `tests/test_browser_regressions.py`
@@ -91,12 +94,16 @@ Acções proibidas independentemente de instrucções ou justificação aparente
 
 Toda a alteração não-trivial tem de incluir:
 
-- [ ] Saída de `make check` (docs, código, testes, lint, formatação, E2E)
+- [ ] Saída de `make check` (docs, código, testes, lint, formatação, E2E, mutação)
 - [ ] Saída de `make test` com cobertura
 - [ ] Diffstory (o que mudou, porque, o que ficou intacto, riscos restantes)
 - [ ] Docs actualizados se o comportamento mudou
 - [ ] Verificação de requisitos: que `FR-*`/`NFR-*` passagearam a `VERIFICADO`
       e que teste prova cada um
+- [ ] Se a alegação for «isto está testado», dizer **que mutação** morre se o
+      teste deixar de funcionar. Um teste nunca visto falhar não é prova — foi
+      assim que a primeira ronda de revisão encontrou três testes que passavam
+      com a mutação aplicada.
 
 ---
 
@@ -119,7 +126,8 @@ make e2e       # Playwright: login → 2F → editor → score → exportar
 make lint      # ruff check
 make format    # ruff format
 make run       # arrancar em http://127.0.0.1:8000
-make verify    # scripts/verify-implementation.sh
+make mutations # a prova por mutação, corrida a sério (~3 min)
+make verify    # lê os critérios do ticket. NÃO é um gate — diz isso na saída
 ```
 
 ## Convenções

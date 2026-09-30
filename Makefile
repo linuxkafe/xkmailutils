@@ -11,7 +11,7 @@ AES_RUN_VARS := MAILUTILS_ENV=development MAILUTILS_MAIL_BACKEND=console
 export PYTHONPATH := src
 
 .PHONY: setup run test e2e lint format check docs-check code-check test-check \
-        lint-check format-check e2e-check verify clean doctor help
+        lint-check format-check e2e-check mutation-check verify clean doctor help
 
 # ---------------------------------------------------------------------- setup
 setup:
@@ -41,7 +41,7 @@ format:
 # imprime "coverage abaixo de 80%" e sai com 0 é um gate que não existe, e é
 # pior do que não ter gate nenhum — dá confiança falsa.
 
-check: docs-check code-check test-check lint-check format-check e2e-check
+check: docs-check code-check test-check lint-check format-check e2e-check mutation-check
 	@echo ""
 	@echo "make check: TODOS OS GATES VERDES"
 
@@ -131,6 +131,23 @@ e2e-check:
 	@$(PYTHON) -m pytest e2e --no-cov -q
 	@echo "  ok fluxo login → 2F → editor → score → exportar verificados no browser"
 
+# ------------------------------------------------------- mutation-check
+#
+# A prova por mutação da primeira ronda foi feita à mão, uma vez, e não deixou
+# rasto nenhum. Duas personas da revisão provaram, por mutação, que três dos
+# testes **não** detectavam as mutações que alegavam detectar — e a garantia
+# escrita no ticket e no docstring era verdadeira quando a escrevi e falsa como
+# prova. (F-10)
+#
+# `run-mutations.py --verificar` aplica cada alteração, corre o comando e
+# reverte. Sai != 0 se alguma não fizer o gate ficar vermelho, o que significa
+# que os testes que dizem provar essas coisas não as provam. Custa ~3 minutos;
+# é o preço de uma afirmação ser auditável em vez de lembrada.
+mutation-check:
+	@echo "mutation-check"
+	@$(PYTHON) scripts/run-mutations.py --verificar
+	@echo "  ok toda a mutação faz o gate ficar vermelho"
+
 # --------------------------------------------------------------------- verify
 verify:
 	@./scripts/verify-implementation.sh $(TICKET)
@@ -147,6 +164,12 @@ doctor:
 	@echo "Ruff:      $$(ruff --version 2>&1 || echo 'não instalado')"
 	@echo "FastAPI:   $$($(PYTHON) -c 'import fastapi; print(fastapi.__version__)' 2>&1 || echo ausente)"
 	@echo "httpx:     $$($(PYTHON) -c 'import httpx; print(httpx.__version__)' 2>&1 || echo ausente)"
+	@# O browser é requisito de `make check`, não um extra: `e2e-check` falha
+	@# alto sem ele. `doctor` é o comando que existe para dizer o que falta,
+	@# e silenciar o browser aqui era esconder a única dependência que não se
+	@# resolve com `make setup`. (F-13)
+	@echo "playwright:$$($(PYTHON) -c 'from importlib.metadata import version; print(version("playwright"))' 2>&1 || echo ausente)"
+	@$(PYTHON) scripts/check-playwright-browsers.py 2>&1 | sed 's/^/  /' || true
 	@echo ""
 	@echo "Nota: starlette 0.31 usa TestClient(app=...), removido no httpx 0.28."
 	@echo "      Os testes usam tests/asgi_client.py. Não rebaixar o httpx do sistema."
@@ -154,9 +177,11 @@ doctor:
 help:
 	@echo "make setup         instalar dependências de desenvolvimento"
 	@echo "make run           arrancar em http://127.0.0.1:8000"
-	@echo "make check         O GATE: docs + código + testes + lint"
+	@echo "make check         O GATE: docs + código + testes + lint + formatação + E2E"
+	@echo "make setup         instala dependências. Depois: python3 -m playwright install chromium"
 	@echo "make test          pytest com cobertura (HTTP, sem browser)"
 	@echo "make e2e           Playwright: login → 2F → editor → score → exportar"
+	@echo "make mutations     a prova por mutação, corrida a sério (~3 min)"
 	@echo "make lint          ruff check"
 	@echo "make format        ruff format"
 	@echo "make verify        scripts/verify-implementation.sh"

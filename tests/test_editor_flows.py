@@ -73,13 +73,38 @@ class TestEditor:
         assert response.status_code == 200
         assert "Risco de spam estimado" in response.text
 
-    def test_shows_a_score_before_anything_is_typed(
+    def test_uma_assinatura_vazia_nao_promete_que_e_segura(
         self, app: SyncASGIClient, conn, normal_user: int
     ) -> None:
-        """Ver o score a subir é o que ensina o utilizador a ler o número.
-        Uma assinatura vazia tem de mostrar o estado, não uma página em branco."""
+        """Um formulário em branco é um estado, não um score de zero.
+
+        **Este teste afirmava o contrário** — exigia que o editor vazio
+        mostrasse «0 / 100 SEGURO» com selo verde. A revisão F-12 encontrou que
+        isso treina o utilizador a ignorar o selo antes de escrever uma letra,
+        e o dono aceitou a inversão. A inversão está escrita aqui em vez de o
+        teste ter sido apagado, e o teste ficou mais forte: passa a afirmar os
+        dois lados.
+
+        Se um dia alguém resolver mostrar o score de um formulário vazio, este
+        teste diz porque não, e o porquê está no código.
+        """
         _signed_in(app, conn, normal_user)
-        assert "/ 100" in app.get("/assinatura").text
+        vazio = app.get("/assinatura").text
+
+        assert 'data-nivel="VAZIO"' in vazio, (
+            "um formulário em branco não pode ter um selo de score: o número "
+            "0/100 é verdade e não é informação"
+        )
+        assert "POR PREENCHER" in vazio
+        assert "SEGURO" not in vazio.split('id="caixa-score"')[1].split("</section")[0]
+        assert "Créditos" not in vazio
+
+        # E o outro lado: com conteúdo, o score é mostrado e é honesto.
+        _save(app, {"name": "Ana Silva", "role": "Engenheira de Software"})
+        preenchida = app.get("/assinatura").text
+        assert "/ 100" in preenchida
+        assert 'data-nivel="VAZIO"' not in preenchida
+        assert "POR PREENCHER" not in preenchida
 
     def test_shows_the_heuristic_warning(self, app: SyncASGIClient, conn, normal_user: int) -> None:
         """FR-4.8. Sem este texto, o score é uma promessa que a aplicação não
@@ -444,23 +469,41 @@ class TestSecurityHeaders:
         for proibido in ("'unsafe-inline'", "'unsafe-eval'", "'unsafe-hashes'"):
             assert proibido not in csp, f"a CSP relaxou-se: {proibido}"
 
-    def test_only_frames_may_use_blob(self, app: SyncASGIClient) -> None:
-        """`blob:` só pode aparecer em `frame-src`.
+    def test_blob_nao_aparece_em_nenhuma_directive(self, app: SyncASGIClient) -> None:
+        """A excepção `blob:` foi removida, e não substituída por outra.
 
-        O preview da assinatura é um `iframe sandbox=""` com uma `blob:` URL, e
-        `default-src 'self'` bloqueava-o — o painel de pré-visualização nunca
-        renderizou nada. A excepção é `frame-src 'self' blob:`, e é a única.
-        Se `blob:` aparecer noutra directive, deixou de ser uma excepção para o
-        preview e passou a ser uma excepção para o produto.
+        O preview da assinatura foi um `iframe sandbox` com uma `blob:` URL, o
+        que obrigou a `frame-src 'self' blob:` — e o documento `blob:` herda a
+        CSP de quem o cria, pelo que a assinatura aparecia sem estilos. Passou
+        a ser `/assinatura/preview-documento`, que tem a CSP dele, e a
+        aplicação ficou sem `blob:` nenhum. Menos superfície, não mais. (F-04)
         """
         csp = app.get("/entrar").headers.get("content-security-policy", "")
-        assert "frame-src 'self' blob:" in csp
-        for directive in csp.split(";"):
-            directive = directive.strip()
-            if "blob:" in directive:
-                assert directive.startswith("frame-src"), (
-                    f"blob: aparece numa directive que não é frame-src: {directive}"
-                )
+        assert "blob:" not in csp, f"`blob:` voltou a aparecer na CSP: {csp}"
+        assert "frame-src 'self'" in csp
+
+    def test_o_documento_do_preview_permite_estilos_e_nao_scripts(
+        self, app: SyncASGIClient, conn, normal_user: int
+    ) -> None:
+        """O documento do preview é o que dá estilo à assinatura engavetada.
+
+        Se `style-src` não permitir inline, o preview volta a mostrar Times New
+        Roman a preto — o sintoma medido do F-04, que um teste anterior não
+        apanhava porque só afirmava que o texto não estava vazio.
+        """
+        _signed_in(app, conn, normal_user)
+        resposta = app.get('/assinatura/preview-documento?fields={"name":"Ana"}&theme=dark')
+        assert resposta.status_code == 200
+        csp = resposta.headers.get("content-security-policy", "")
+        assert "style-src 'unsafe-inline'" in csp, (
+            f"o documento do preview não pode mostrar a assinatura: {csp}"
+        )
+        assert "script-src 'none'" in csp
+        assert "frame-ancestors 'self'" in csp, (
+            "sem `frame-ancestors 'self'` o browser recusa engavetar o documento "
+            "e o preview fica vazio"
+        )
+        assert "Times New Roman" not in resposta.text
 
 
 class TestTheme:
@@ -469,3 +512,74 @@ class TestTheme:
 
     def test_footer_offers_a_health_link(self, app: SyncASGIClient) -> None:
         assert "/saude" in app.get("/entrar").text
+
+
+class TestOFicheiroExportadoMostraOSeusEstilos:
+    """O ficheiro que o utilizador descarrega tem de se mostrar.
+
+    A CSP do documento exportado era `default-src 'none'; img-src https: http:`.
+    Sem `style-src`, a directive cai para `default-src 'none'` — que bloqueia
+    os estilos inline **do próprio produto**, incluindo o `background:#ffffff`
+    do `<body>` duas linhas abaixo. O ficheiro saía com o HTML certo e
+    renderizava-se como texto por formatar. (F-08)
+
+    Estes testes olham para a CSP como browser, não para a intenção: o que
+    interessa é se `style-src` permite inline e se o `script-src` continua a
+    não permitir script.
+    """
+
+    CSP = re.compile(r'http-equiv="Content-Security-Policy"\s*content="([^"]+)"')
+
+    @staticmethod
+    def _documento(app: SyncASGIClient, conn, normal_user: int) -> str:
+        """O `.html` exportado, com sessão e assinatura guardada.
+
+        Sem assinatura a rota devolve 303 para `/assinatura?erro=vazio` e não há
+        documento — que é como um teste de CSP do ficheiro exportado acaba a
+        testar o redirect em vez do ficheiro.
+        """
+        _signed_in(app, conn, normal_user)
+        _save(app, {"name": "Ana Silva", "role": "Engenheira", "email": "ana@exemplo.pt"})
+        resposta = app.get("/assinatura/exportar.html", follow_redirects=False)
+        assert resposta.status_code == 200, (
+            f"a exportação devolveu {resposta.status_code} em vez do documento"
+        )
+        return resposta.text
+
+    def _csp(self, html: str) -> dict[str, str]:
+        achado = self.CSP.search(html)
+        assert achado, "o documento exportado não traz CSP"
+        partes = {}
+        for pedaco in achado.group(1).split(";"):
+            pedaco = pedaco.strip()
+            if pedaco:
+                nome, _, valor = pedaco.partition(" ")
+                partes[nome] = valor
+        return partes
+
+    def test_permite_estilos_inline(self, app: SyncASGIClient, conn, normal_user: int) -> None:
+        csp = self._csp(self._documento(app, conn, normal_user))
+        assert csp.get("style-src") == "'unsafe-inline'", (
+            f"style-src é {csp.get('style-src')!r}: o ficheiro exportado não mostra "
+            f"os estilos da assinatura. Sem `style-src`, a directive cai para "
+            f"`default-src 'none'` e mata o CSS do próprio produto."
+        )
+
+    def test_nao_permite_script_nem_ligacoes(
+        self, app: SyncASGIClient, conn, normal_user: int
+    ) -> None:
+        """Permitir estilos inline não é abrir o ficheiro."""
+        csp = self._csp(self._documento(app, conn, normal_user))
+        assert csp.get("script-src") == "'none'"
+        assert csp.get("connect-src") == "'none'"
+        assert csp.get("form-action") == "'none'"
+
+    def test_a_assinatura_esta_no_documento_com_o_seu_fundo(
+        self, app: SyncASGIClient, conn, normal_user: int
+    ) -> None:
+        html = self._documento(app, conn, normal_user)
+        assert "background:#ffffff" in html, (
+            "o `<body>` do ficheiro exportado perdeu o fundo — e perdia-o porque "
+            "a CSP descartava o atributo, não porque o atributo lá não estivesse"
+        )
+        assert "mailutils-signature" in html, "o documento não tem a assinatura"

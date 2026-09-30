@@ -298,6 +298,13 @@ def score_signature(html: str, plain_text: str = "") -> dict:
         "categoria": label,
         "categoria_acentuada": label_for_score(score),
         "descricao": description,
+        # Uma assinatura vazia pontua 0 e merece 0, mas mostrar «0 / 100
+        # SEGURO» com um selo verde e dois créditos de bónus é ensinar ao
+        # utilizador a ignorar o selo antes de ele ter escrito uma letra. Um
+        # score honesto para um formulário em branco é «ainda não há nada para
+        # medir». O score não muda; o que muda é haver um estado neutro para
+        # mostrar. (F-12)
+        "vazio": not visible_text and not srcs and not hrefs,
         "regras": [f.as_dict() for f in findings],
         "creditos": [f.as_dict() for f in bonuses],
         "estatisticas": {
