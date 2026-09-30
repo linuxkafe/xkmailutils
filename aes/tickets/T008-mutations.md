@@ -56,8 +56,8 @@ FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_tema_
 ```
 FAILED e2e/test_fluxo_completo.py::test_tema_claro_por_clique - playwright._i...
 FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
-2 failed, 9 deselected in 23.62s
-    (24s)
+2 failed, 9 deselected in 24.06s
+    (25s)
 ```
 
 ### M-04 — F-05
@@ -71,7 +71,7 @@ FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
 ```
 =========================== short test summary info ============================
 FAILED e2e/test_fluxo_completo.py::test_o_score_actualiza_enquanto_se_escreve
-1 failed, 10 deselected in 4.16s
+1 failed, 10 deselected in 4.75s
     (5s)
 ```
 
@@ -86,7 +86,7 @@ FAILED e2e/test_fluxo_completo.py::test_o_score_actualiza_enquanto_se_escreve
 ```
 =========================== short test summary info ============================
 FAILED tests/test_spam.py::TestOScoreEInteiro::test_o_analisador_da_um_int - ...
-1 failed, 60 passed in 0.10s
+1 failed, 60 passed in 0.11s
     (1s)
 ```
 
@@ -101,8 +101,8 @@ FAILED tests/test_spam.py::TestOScoreEInteiro::test_o_analisador_da_um_int - ...
 ```
 =========================== short test summary info ============================
 FAILED e2e/test_fluxo_completo.py::test_a_barra_e_discriminante_com_um_score_nao_zero
-1 failed, 10 deselected in 3.68s
-    (4s)
+1 failed, 10 deselected in 4.19s
+    (5s)
 ```
 
 ### M-07 — F-08
@@ -116,7 +116,7 @@ FAILED e2e/test_fluxo_completo.py::test_a_barra_e_discriminante_com_um_score_nao
 ```
 =========================== short test summary info ============================
 FAILED tests/test_editor_flows.py::TestOFicheiroExportadoMostraOSeusEstilos::test_permite_estilos_inline
-1 failed, 2 passed, 47 deselected in 1.05s
+1 failed, 2 passed, 47 deselected in 1.19s
     (2s)
 ```
 
@@ -131,7 +131,7 @@ FAILED tests/test_editor_flows.py::TestOFicheiroExportadoMostraOSeusEstilos::tes
 ```
 =========================== short test summary info ============================
 FAILED tests/test_editor_flows.py::TestEditor::test_uma_assinatura_vazia_nao_promete_que_e_segura
-1 failed, 49 deselected in 0.28s
+1 failed, 49 deselected in 0.25s
     (1s)
 ```
 
@@ -148,7 +148,7 @@ FAILED tests/test_editor_flows.py::TestEditor::test_uma_assinatura_vazia_nao_pro
 ```
 =========================== short test summary info ============================
 FAILED tests/test_browser_regressions.py::TestNenhumSelectorOrfaoEmAppCss::test_todo_o_selector_definido_e_usado
-1 failed, 1 passed, 12 deselected in 0.05s
+1 failed, 1 passed, 18 deselected in 0.05s
     (1s)
 ```
 
@@ -165,7 +165,7 @@ FAILED tests/test_browser_regressions.py::TestNenhumSelectorOrfaoEmAppCss::test_
 ```
 =========================== short test summary info ============================
 FAILED tests/test_browser_regressions.py::TestAInstalaOCiTemDeTerTudo::test_toda_a_ci_que_corre_o_gate_instala_o_browser
-1 failed, 2 passed, 11 deselected in 0.05s
+1 failed, 2 passed, 17 deselected in 0.05s
     (1s)
 ```
 
@@ -180,8 +180,8 @@ FAILED tests/test_browser_regressions.py::TestAInstalaOCiTemDeTerTudo::test_toda
 ```
 =========================== short test summary info ============================
 FAILED e2e/test_fluxo_completo.py::test_o_preview_mostra_a_assinatura_como_ela_sai
-1 failed, 10 deselected in 4.20s
-    (5s)
+1 failed, 10 deselected in 4.06s
+    (4s)
 ```
 
 ### M-12 — F-01
@@ -195,8 +195,53 @@ FAILED e2e/test_fluxo_completo.py::test_o_preview_mostra_a_assinatura_como_ela_s
 ```
 FAILED e2e/test_fluxo_completo.py::test_tema_claro_por_clique - playwright._i...
 FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
-2 failed, 9 deselected in 23.87s
-    (24s)
+2 failed, 9 deselected in 24.36s
+    (25s)
 ```
 
-**Total: 12 mutações. Sem escape: nenhuma.**
+### M-13 — F-17
+
+- **Ficheiro:** `src/mailutils/mailer.py`
+- **Mutação:** `message["Date"] = formatdate(localtime=True)` → `# MUTACAO M-13: sem Date, o Amavis alerta e a pontuacao sobe`
+- **Comando:** `python3 -m pytest tests/test_mailer_and_images.py -q --no-cov -k date`
+- **Porque:** A mensagem fica sem `Date`, que o RFC 5322 torna obrigatório. O Amavis injecta `X-Amavis-Alert` e o Gmail e a Microsoft sobem a pontuação logo à entrada. Foi o primeiro sintoma de um email que não chegava. (F-17)
+- **Saída observada:**
+
+```
+=========================== short test summary info ============================
+FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test_tem_date
+1 failed, 51 deselected in 0.06s
+    (1s)
+```
+
+### M-14 — F-17
+
+- **Ficheiro:** `src/mailutils/mailer.py`
+- **Mutação:** `make_msgid(domain=_dominio_de(settings.mail_from))` → `make_msgid()  # MUTACAO M-14`
+- **Comando:** `python3 -m pytest tests/test_mailer_and_images.py -q --no-cov -k message_id`
+- **Porque:** O `Message-ID` deixa de levar o domínio do remetente e passa a usar o `fqdn` da máquina. Num servidor de rede interna isso é `.lan`, e um domínio não roteável é penalizado de imediato, porque parece um script mal configurado. (F-17)
+- **Saída observada:**
+
+```
+FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test_o_message_id_usa_o_dominio_do_remetente
+FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test_o_message_id_segue_o_remetente_e_nao_a_maquina
+2 failed, 50 deselected in 0.07s
+    (1s)
+```
+
+### M-15 — F-17
+
+- **Ficheiro:** `src/mailutils/mailer.py`
+- **Mutação:** `del parte["MIME-Version"]` → `pass  # MUTACAO M-15`
+- **Comando:** `python3 -m pytest tests/test_mailer_and_images.py -q --no-cov -k mime`
+- **Porque:** A `MIME-Version` volta a entrar na parte `text/html`, que é o que o `add_alternative` do stdlib faz e é MIME inválido: dentro dos limites, aquele cabeçalho pertence só à mensagem. (F-17)
+- **Saída observada:**
+
+```
+=========================== short test summary info ============================
+FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test_a_mime_version_so_existe_no_topo
+1 failed, 51 deselected in 0.06s
+    (1s)
+```
+
+**Total: 15 mutações. Sem escape: nenhuma.**

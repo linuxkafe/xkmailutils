@@ -204,6 +204,49 @@ MUTACOES: tuple[Mutacao, ...] = (
         "era o sintoma exacto do F-01, em que nada no ecrã escrevia o cookie.",
         ("F-01",),
     ),
+    Mutacao(
+        "M-13",
+        "src/mailutils/mailer.py",
+        '    message["Date"] = formatdate(localtime=True)',
+        '    # MUTACAO M-13: sem Date, o Amavis alerta e a pontuacao sobe',
+        (
+            "python3", "-m", "pytest", "tests/test_mailer_and_images.py",
+            "-q", "--no-cov", "-k", "date",
+        ),
+        "A mensagem fica sem `Date`, que o RFC 5322 torna obrigatório. O Amavis "
+        "injecta `X-Amavis-Alert` e o Gmail e a Microsoft sobem a pontuação logo à "
+        "entrada. Foi o primeiro sintoma de um email que não chegava. (F-17)",
+        ("F-17",),
+    ),
+    Mutacao(
+        "M-14",
+        "src/mailutils/mailer.py",
+        "make_msgid(domain=_dominio_de(settings.mail_from))",
+        "make_msgid()  # MUTACAO M-14",
+        (
+            "python3", "-m", "pytest", "tests/test_mailer_and_images.py",
+            "-q", "--no-cov", "-k", "message_id",
+        ),
+        "O `Message-ID` deixa de levar o domínio do remetente e passa a usar o "
+        "`fqdn` da máquina. Num servidor de rede interna isso é `.lan`, e um "
+        "domínio não roteável é penalizado de imediato, porque parece um script "
+        "mal configurado. (F-17)",
+        ("F-17",),
+    ),
+    Mutacao(
+        "M-15",
+        "src/mailutils/mailer.py",
+        '            del parte["MIME-Version"]',
+        "            pass  # MUTACAO M-15",
+        (
+            "python3", "-m", "pytest", "tests/test_mailer_and_images.py",
+            "-q", "--no-cov", "-k", "mime",
+        ),
+        "A `MIME-Version` volta a entrar na parte `text/html`, que é o que o "
+        "`add_alternative` do stdlib faz e é MIME inválido: dentro dos limites, "
+        "aquele cabeçalho pertence só à mensagem. (F-17)",
+        ("F-17",),
+    ),
 )
 
 

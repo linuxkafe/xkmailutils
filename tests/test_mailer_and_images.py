@@ -11,7 +11,10 @@ depender de um servidor real.
 
 from __future__ import annotations
 
+import dataclasses
 import smtplib
+from email.message import EmailMessage
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 import pytest
@@ -370,3 +373,94 @@ def _png_of_size(width: int, height: int) -> bytes:
     return (
         b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", pixels) + chunk(b"IEND", b"")
     )
+
+
+class TestOsCabecalhosQueOsFiltrosExigem:
+    """Três cabeçalhos que não são opcionais, e que o `EmailMessage` não põe.
+
+    Descobertos porque alguém instalou o produto e os emails não chegavam aos
+    destinatários: o Amavis injectava `X-Amavis-Alert` por falta de `Date`, o
+    Postfix punha um `Message-ID` com o `myhostname` — que é `.lan` num servidor
+    de rede interna, e um domínio não roteável é penalizado de imediato —, e a
+    parte `text/html` saía com um segundo `MIME-Version`, que é MIME inválido.
+    (F-17)
+
+    Nenhum destes é subjectivo. O RFC 5322 torna `Date` obrigatório, o
+    `Message-ID` é o identificador que liga conversa e reputação, e a
+    `MIME-Version` é um cabeçalho da mensagem e não de cada parte.
+    """
+
+    @staticmethod
+    def _mensagem(remetente: str = "mailutils@ltmed.pt") -> EmailMessage:
+        from mailutils.mailer import _build_message, _render_otp_email
+
+        settings = dataclasses.replace(
+            config.load_settings(env="development"),
+            mail_backend="smtp",
+            smtp_host="smtp.exemplo.pt",
+            smtp_port=587,
+            mail_from=remetente,
+            mail_from_name="mailutils",
+        )
+        assunto, texto, html = _render_otp_email("363484", "mailutils", 10)
+        return _build_message(settings, "ana@exemplo.pt", assunto, texto, html)
+
+    def test_tem_date(self) -> None:
+        """RFC 5322 §3.6: `Date` é obrigatório. Sem ele o Amavis alerta."""
+        data = self._mensagem().get("Date")
+        assert data, "a mensagem não tem Date: o Amavis injecta X-Amavis-Alert"
+        # E tem de ser uma data RFC 2822, não uma string qualquer.
+        assert parsedate_to_datetime(data) is not None, f"Date inválido: {data!r}"
+
+    def test_o_message_id_usa_o_dominio_do_remetente(self) -> None:
+        """O `Message-ID` é o identificador de reputação. Tem de ser verificável.
+
+        Se o Postfix o gera, sai com o `myhostname` — `servidor.ltmed.lan` num
+        servidor de rede interna. Aí o Gmail e a Microsoftothytratam como script
+        mal configurado, porque `.lan` não é um domínio de que se possa verificar
+        a autoria.
+        """
+        identificador = self._mensagem("mailutils@ltmed.pt").get("Message-ID")
+        assert identificador, "sem Message-ID o Postfix põe um com o myhostname"
+        assert identificador.endswith("@ltmed.pt>"), (
+            f"o Message-ID tem de ser do domínio do remetente: {identificador!r}"
+        )
+
+    def test_o_message_id_segue_o_remetente_e_nao_a_maquina(self) -> None:
+        """Mudar de remetente tem de mudar o `Message-ID`."""
+        primeiro = self._mensagem("mailutils@ltmed.pt").get("Message-ID")
+        segundo = self._mensagem("outro@outraempresa.pt").get("Message-ID")
+        assert primeiro.endswith("@ltmed.pt>")
+        assert segundo.endswith("@outraempresa.pt>")
+        assert primeiro != segundo, "dois Messages-ID iguais em mensagens diferentes"
+
+    def test_a_mime_version_so_existe_no_topo(self) -> None:
+        """A `MIME-Version` é um cabeçalho da mensagem, não de cada parte.
+
+        O `add_alternative` do stdlib copia-a para a parte nova — confirmado
+        com o Python 3.12 — e dentro dos limites isso é MIME inválido. Parsers
+        estritos rejeitam a mensagem.
+        """
+        mensagem = self._mensagem()
+        topo = [p for p in mensagem.walk() if not p.is_multipart()]
+        assert len(topo) == 2, f"esperava duas partes, tenho {len(topo)}"
+        for parte in topo:
+            assert parte.get("MIME-Version") is None, (
+                f"a parte {parte.get_content_type()} tem MIME-Version: dentro dos "
+                f"limites isso é MIME inválido"
+            )
+        assert mensagem.get("MIME-Version") == "1.0", "a mensagem precisa de um, no topo"
+
+    def test_a_mensagem_nao_tem_alertas_do_amavis(self) -> None:
+        """A correcção é a ausência do alerta, não a sua presença.
+
+        Um teste que verificasse «não há `X-Amavis-Alert`» passaria com uma
+        mensagem sem `Date` nenhum, porque o Amavis é que o injecta. O que
+        mede a correcção é haver `Date`.
+        """
+        bruta = self._mensagem().as_bytes().decode("utf-8", "replace")
+        cabecalho = bruta.split("\n\n", 1)[0]
+        assert "X-Amavis-Alert" not in cabecalho
+        assert cabecalho.count("MIME-Version:") == 1, (
+            "a mensagem tem de ter exactamente um MIME-Version, no topo"
+        )
