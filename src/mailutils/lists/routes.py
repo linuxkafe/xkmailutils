@@ -260,7 +260,9 @@ async def importar(
 
     try:
         confirmar = confirmar_imediatamente.lower() in ("on", "1", "true", "yes")
-        resultado = service.importar_csv(conn, session.user_id, list_id, conteudo, settings, confirmar_imediatamente=confirmar)
+        resultado = service.importar_csv(
+            conn, session.user_id, list_id, conteudo, settings, confirmar_imediatamente=confirmar
+        )
     except service.ErroLista as erro:
         return ir(request, f"/listas/{list_id}?erro=importacao&detalhe={_motivo(erro)}")
 

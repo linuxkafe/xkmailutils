@@ -373,7 +373,10 @@ def importar_csv(
         row["email"]
         for row in conn.execute("SELECT email FROM list_addresses WHERE list_id = ?", (list_id,))
     }
-    a_inserir: list[tuple[int, str, str, str]] = []
+    # A forma da tupla depende de `confirmar_imediatamente`: com o endereço já
+    # confirmado são cinco campos (inclui `confirmed_at`), sem ele são quatro.
+    # A anotação diz as duas formas, porque a anotação que diz só uma está errada.
+    a_inserir: list[tuple[int, str, str, str] | tuple[int, str, str, str, str]] = []
     ja_na_lista = contar_enderecos(conn, list_id)
 
     # O tecto de pendentes vive **aqui** e não em `pedir_confirmacao`.
@@ -408,7 +411,10 @@ def importar_csv(
         if normalizado in ja_presentes:
             resultado.ja_existentes += 1
             continue
-        if not confirmar_imediatamente and ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations:
+        if (
+            not confirmar_imediatamente
+            and ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations
+        ):
             resultado.invalidos.append(
                 f"interrompido — chegou ao teto de "
                 f"{settings.max_pending_confirmations} confirmações por confirmar. "
@@ -429,7 +435,8 @@ def importar_csv(
         with transaction(conn):
             if confirmar_imediatamente:
                 conn.executemany(
-                    "INSERT OR IGNORE INTO list_addresses (list_id, email, name, created_at, confirmed_at)"
+                    "INSERT OR IGNORE INTO list_addresses"
+                    " (list_id, email, name, created_at, confirmed_at)"
                     " VALUES (?, ?, ?, ?, ?)",
                     a_inserir,
                 )
