@@ -381,6 +381,37 @@ def test_a_migracao_acrescenta_sem_aperceber_dos_dados_antigos(tmp_path: Path) -
     assert {"recipient_lists", "list_addresses"} <= tabelas
 
 
+def test_cada_migracao_e_um_statement_so() -> None:
+    """A invariante que `migrate()` pressupõe e que ninguém escreve.
+
+    `migrate()` faz `for statement in _MIGRATIONS: conn.execute(statement)`, e
+    `execute()` do sqlite3 aceita **um** statement: duas tabelas no mesmo string
+    dão `near "CREATE": syntax error` e a aplicação não arranca. Foi assim que
+    parou a instalação em 2026-10-02, com `list_addresses` e `list_envios` no
+    mesmo bloco de texto.
+
+    Uma migração a partir de uma base nova também apanha o erro, mas diz só
+    "a migração falhou". Este teste repete o que `migrate()` faz e diz **qual**
+    das entradas foi a culpada. As entradas correm todas na mesma ligação e por
+    ordem, porque um `CREATE INDEX` depende da tabela que a entrada anterior
+    criou — o que interessa é a sequência, não cada pedaço isolado.
+    """
+    conn = sqlite3.connect(":memory:")
+    try:
+        for indice, statement in enumerate(db._MIGRATIONS):
+            try:
+                conn.execute(statement)
+            except sqlite3.Error as erro:
+                pytest.fail(
+                    f"_MIGRATIONS[{indice}] falhou: {erro}. Ou não é um statement "
+                    f"so (duas tabelas no mesmo string dão «near CREATE»), ou "
+                    f"depende de uma tabela que ainda não foi criada. "
+                    f"O que la esta é: {statement!r}"
+                )
+    finally:
+        conn.close()
+
+
 def test_a_migracao_e_repetivel_sem_alterar_nada(tmp_path: Path) -> None:
     """O arranque chama `migrate()` em cada start. A segunda vez tem de ser um
     no-op: se não for, a terceira execução de um reinício já mudou alguma coisa."""
