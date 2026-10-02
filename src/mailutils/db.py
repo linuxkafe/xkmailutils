@@ -17,7 +17,7 @@ from typing import Any
 
 #: Versão do esquema. Incrementar sempre que `migrate()` acrescenta DDL, e
 #: acrescentar o bloco correspondente em `_MIGRATIONS`.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 #: Estrutura por omissão de uma assinatura guardada.
 #:
@@ -148,6 +148,19 @@ _MIGRATIONS: tuple[str, ...] = (
         created_at             TEXT    NOT NULL,
         UNIQUE (list_id, email)
     )
+    CREATE TABLE IF NOT EXISTS list_envios (
+        id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+        list_id                INTEGER NOT NULL REFERENCES recipient_lists(id) ON DELETE CASCADE,
+        subject                TEXT    NOT NULL,
+        body                   TEXT    NOT NULL,
+        state                  TEXT    NOT NULL DEFAULT 'agendado',
+        scheduled_at           TEXT    NOT NULL,
+        claimed_at             TEXT,
+        sent_at                TEXT,
+        failed_at              TEXT,
+        created_at             TEXT    NOT NULL,
+        CHECK (state IN ('agendado', 'enviando', 'enviado', 'falhado'))
+    )
     """,
     "CREATE INDEX IF NOT EXISTS idx_otp_user ON otp_codes (user_id, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id)",
@@ -256,6 +269,12 @@ def migrate(conn: sqlite3.Connection) -> None:
             "signatures",
             "layout",
             f"TEXT NOT NULL DEFAULT '{DEFAULT_SIGNATURE_LAYOUT}'",
+        )
+        _add_column(
+            conn,
+            "recipient_lists",
+            "cadence_seconds",
+            "INTEGER NOT NULL DEFAULT 2",
         )
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
