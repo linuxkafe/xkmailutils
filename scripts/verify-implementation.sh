@@ -12,6 +12,9 @@ case "${1:-}" in
 	echo "Checks acceptance criteria for a ticket."
 	echo "If no ticket ID given, reads current_ticket from aes/kanban.md"
 	echo ""
+	echo "Os tickets vivem em aes/, que esta no .gitignore. Num clone limpo,"
+	echo "aponte para um ticket solto com AES_TICKETS_DIR=/caminho"
+	echo ""
 	echo "Exit code: 0 if all criteria pass, 1 if any fail"
 	exit 0
 	;;

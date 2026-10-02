@@ -128,7 +128,7 @@ Estado: `DRAFT` | `IMPLEMENTADO` | `VERIFICADO`. Só `VERIFICADO` tem teste.
 | NFR-13 | Acessibilidade | As cores funcionais usadas **como texto** (`--ok-text`, `--warn-text`, `--high-text`, `--bad-text`, `--info-text`) passam 4.5:1 sobre `--bg`, `--bg-alt` e `--surface` nos dois temas. As variantes de preenchimento (`--*-fill`, barras e bordas) estão isentas. O contraste do texto corrente e o contraste *não* textual não estão verificados. | IMPLEMENTADO |
 | NFR-14 | Internacionalização | Apenas pt-PT. Todas as mensagens de interface vivem em `templates.MESSAGENS`, indexadas por chave estável — é o que permite traduzir sem caçar strings em templates. | IMPLEMENTADO |
 | NFR-15 | Maintainability | O caminho login → segundo factor → editor → score → exportação é verificado num browser real, com clique e formulário, e corre dentro de `make check`. Um E2E que passa sem browser conta como falhado, não como ignorado. | IMPLEMENTADO |
-| NFR-16 | Maintainability | Toda a correcção de um bug tem uma mutação associada que, se passar, deixa `make check` vermelho. O ficheiro `aes/tickets/T008-mutations.md` é **gerado** por `scripts/run-mutations.py` a partir da saída real dos comandos — ninguém escreve lá um resultado à mão. | IMPLEMENTADO |
+| NFR-16 | Maintainability | Toda a correcção de um bug tem uma mutação associada que, se passar, deixa `make check` vermelho. O ficheiro `docs/MUTATIONS.md` é **gerado** por `scripts/run-mutations.py` a partir da saída real dos comandos — ninguém escreve lá um resultado à mão. | IMPLEMENTADO |
 | NFR-17 | Conformidade | Enviar exige um remetente identificável: `MAILUTILS_MAIL_FROM` mais `MAILUTILS_SENDER_POSTAL_ADDRESS`. Sem o endereço postal, o envio é recusado no arranque de quem activa o envio. **Esta é a parte de que eu não posso garantir a suficiência jurídica** — os requisitos de descadência variam por jurisdição e o owner é quem assume essa responsabilidade. O que o produto garante é que o mecanismo existe e é obrigatório, não que satisfaz toda a lei. | DRAFT |
 | NFR-18 | Segurança | Os limites anti-abuso são configuração (`MAILUTILS_MAX_LIST_SIZE`, `MAILUTILS_MAX_PENDING_CONFIRMATIONS`, `MAILUTILS_CONFIRM_COOLDOWN_SECONDS`), nunca constantes escondidas. Reduzi-los é legítimo; **aumentá-los por omissão** é uma decisão do dono, e o valor por omissão está escolhido para ser defensável sem revisão legal. | IMPLEMENTADO |
 | NFR-19 | Maintainability | Tudo o que sai da aplicação passa por `signatures/spam.py` antes de sair. Não há caminho de envio que salte o score — nem imediato, nem agendado, nem por reexecução. Testado por uma mutação que remove a chamada e deixa `make check` vermelho. | DRAFT |
@@ -149,7 +149,7 @@ Estado: `DRAFT` | `IMPLEMENTADO` | `VERIFICADO`. Só `VERIFICADO` tem teste.
 > **Alteração de contrato, 2026-10-02.** Até aqui, "SMTP próprio" e "envio de
 > newsletters" estavam em fora-do-âmbito. O dono inverteu a decisão: a aplicação
 > passa a compor e enviar. A decisão anterior está registada no histórico
-> (`git log`) e em `aes/tickets/T013`. O que **não** mudou: zero dependências
+> no `git log`. O que **não** mudou: zero dependências
 > novas, e o SMTP continua a ser o que o operador já tinha.
 
 ## Requisitos que NÃO foram implementados

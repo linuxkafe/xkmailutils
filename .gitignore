@@ -25,6 +25,17 @@ env/
 *.log
 .DS_Store
 .tmp/
+# Andaço de processo do AES (kanban, tickets, revisões, métricas).
+#
+# Não é parte do produto: é registo de trabalho, e um clone do software não
+# precisa dele para correr. Fica local, e o histórico — que é a parte que
+# importa — continua no git.
+#
+# A excepção que prova o contrário é `docs/MUTATIONS.md`: essa é evidência do
+# produto, porque `NFR-16` cita-a e um clone tem de poder confirmar que cada
+# mutação morre. Saiu de `aes/` por isso, não por accidento.
+aes/
+.aes/
 aes/verification/
 .llm_venv/
 .pytest_cache/

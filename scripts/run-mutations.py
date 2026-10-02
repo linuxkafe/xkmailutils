@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Corre cada mutação e escreve `aes/tickets/T008-mutations.md` a partir da saída real.
+"""Corre cada mutação e escreve `docs/MUTATIONS.md` a partir da saída real.
 
 Isto é o gate do F-10. A "prova por mutação" da primeira ronda foi feita à
 mão, uma vez, e deixou rasto zero. Duas personas da revisão Runsnieram, por
@@ -27,7 +27,10 @@ import time
 from dataclasses import dataclass
 
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
-SAIDA = RAIZ / "aes" / "tickets" / "T008-mutations.md"
+#: A prova vive em `docs/`, e não em `aes/`: `NFR-16` cita-a, e um clone
+#: tem de poder confirmar que cada mutação morre. O andaço de processo
+#: (`aes/`) não está no repositório.
+SAIDA = RAIZ / "docs" / "MUTATIONS.md"
 
 @dataclass(frozen=True)
 class Mutacao:
@@ -450,6 +453,7 @@ def main() -> int:
     print(f"{'mutação':6} {'morreu':7} tickets  ficheiro")
     linhas = []
     silenciosas = []
+    SAIDA.parent.mkdir(parents=True, exist_ok=True)
     for mutacao in MUTACOES:
         morreu, saida = correr(mutacao)
         marca = "SIM" if morreu else "NÃO"

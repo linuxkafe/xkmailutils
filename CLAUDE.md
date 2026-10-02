@@ -202,9 +202,17 @@ exactamente os que mais importavam ler.
 - `docs/PERSONAS.md` — quem usa isto. A Persona 4 foi escrita por um agente e
   está assinalada como hipótese; ler a nota antes de a tratar como evidência.
 - `docs/DESIGN.md` — tokens e a invariante cabeçalho == rodapé
-- `aes/kanban.md` — estado real, e a dívida conhecida que ninguém resolveu
-- `aes/kanban.md` — estado do projecto
-- `aes/handoffs/` — se retomar trabalho interrompido
+- `docs/MUTATIONS.md` — a prova por mutação, gerada. É o que diz que cada
+  correcção de um bug tem um teste que morre
+
+O andaço de processo do AES — kanban, tickets, revisões de pares, métricas —
+vive em `aes/` e **não está no repositório**: é registo de trabalho, e um clone
+do software não precisa dele para correr. Quem o tiver localmente lê o kanban
+aí; quem não, não perde nada, porque o que se lê de qualquer forma está nos
+seis documentos acima e no git log.
+
+Isto vale para qualquer ficheiro concreto: a documentação versionada descreve
+**onde** vive o andaço, nunca aponta para um caminho que um clone não tem.
 
 ## Session Context (efémero)
 
