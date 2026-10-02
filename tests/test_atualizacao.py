@@ -519,21 +519,66 @@ class TestOComposeCompativelComAVersao:
             "substitui o `-C` e funciona em qualquer versão do Compose"
         )
 
-    def test_a_copia_e_feita_como_root_e_com_a_fonte_so_de_leitura(self, deploy: str) -> None:
-        """Duas decisões que evitam um problema cada uma.
+    def test_a_copia_nao_abre_a_base_em_so_de_leitura(self, deploy: str) -> None:
+        """`mode=ro` não funciona numa base em WAL. Foi o que partiu o deploy.
 
-        - **root**: a cópia é do operador, não da aplicação. Numa instalação
-          com o volume de uma imagem antiga — a correr como root — a aplicação
-          (uid 10001) não consegue escrever em `/data`, e a cópia falhava.
-        - **`mode=ro`**: abrir a base a escrever cria `-wal` e `-shm`; a
-          correr como root, criava-os com o dono root e **a aplicação deixava
-          de poder escrever na base**. Quebrar a base ao tentar fazer uma cópia
-          dela é o pior resultado possível.
+        A base está em `PRAGMA journal_mode = WAL` (db.py:224). Em WAL o SQLite
+        precisa do ficheiro `-shm`, e esse `-shm` é apagado quando a última
+        ligação fecha em condições — que é o que acontece logo depois de um
+        arranque limpo. Abrir em `mode=ro` devolve então
+        `unable to open database file`, e o `--actualizar` nunca arrancava.
+
+        O objectivo original do `mode=ro` era bom — não deixar o root criar um
+        `-wal` com o dono errado — mas trocou um problema raro por um
+        garantido. Resolve-se pela ordem das tentativas, não pelo modo de
+        abertura.
+        """
+        # Sem os comentários. `mode=ro` aparece no texto que explica porquê
+        # não se usa `mode=ro`, e um teste que lê a explicação como se fosse
+        # código falha por estar a ser bem escrito.
+        corpo = "\n".join(
+            linha
+            for linha in _corpo_da_funcao(deploy).splitlines()
+            if not linha.strip().startswith("#")
+        )
+        assert "mode=ro" not in corpo, (
+            "a cópia abre a base em `mode=ro`, que falha numa base WAL sem `-shm`"
+        )
+
+    def test_a_copia_comeca_como_a_aplicacao(self, deploy: str) -> None:
+        """A aplicação é quem tem o direito de criar o `-shm` e o `-wal`.
+
+        Correndo como root por omissão, um `-wal` pode ficar com o dono root e
+        **a aplicação deixa de poder escrever na base**. Quebrar a base ao
+        tentar fazer uma cópia dela é o pior resultado possível, e por isso a
+        primeira tentativa é sempre com o utilizador da aplicação.
         """
         corpo = _corpo_da_funcao(deploy)
-        assert "--user 0:0" in corpo, "a cópia tem de correr como root"
-        assert "mode=ro" in corpo, (
-            "a cópia tem de abrir a base só de leitura, ou deixa ficheiros "
-            "-wal/-shm com o dono root"
+        assert "$compose exec -T mailutils python -c" in corpo, (
+            "a primeira tentativa tem de ser com o utilizador da aplicação"
         )
+        assert "--user" in corpo, "tem de haver fallback para root"
+
+    def test_a_copia_tenta_o_tmp(self, deploy: str) -> None:
+        """`/data` pode estar montado só de leitura. `/tmp` é tmpfs.
+
+        As quatro tentativas — aplicação e root, em `/data` e `/tmp` — existem
+        porque o SQLite dá o mesmo texto de erro para "sem permissão", "sem
+        espaço" e "montado só de leitura". Sem esta tentativa, uma montagem só
+        de leitura era indistinguível de uma base ilesa.
+        """
+        corpo = _corpo_da_funcao(deploy)
+        assert "/tmp/copia.db" in corpo, (  # noqa: S108 - e o caminho que se exige
+            "sem a tentativa em /tmp, um /data montado só de leitura é "
+            "indistinguível de uma base que não existe"
+        )
+
+    def test_a_copia_usa_o_backup_do_sqlite_e_nao_um_cp(self, deploy: str) -> None:
+        """`a.backup(b)` dá um retrato consistente com a aplicação a escrever.
+
+        Copiar o ficheiro com `cp` enquanto a base está viva pode apanhar um
+        estado intermédio. É a razão de ser do `backup()`.
+        """
+        corpo = _corpo_da_funcao(deploy)
+        assert "a.backup(b)" in corpo, "a cópia tem de usar sqlite3 backup()"
         assert "PRAGMA integrity_check" in corpo, "a cópia não é verificada"

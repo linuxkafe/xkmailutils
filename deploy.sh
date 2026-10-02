@@ -149,7 +149,7 @@ actualizar() {
     # Em vez de adivinhar, tenta-se e mostra-se o erro real. Um deploy que
     # falha sem dizer porque e pior do que um deploy que falha.
     carimbo=$(date +%Y%m%d-%H%M%S)
-    destino="$dir/copia-$carimbo.db"
+    caminho="$dir/copia-$carimbo.db"
 
     # Duas decisões que nao eram obvias.
     #
@@ -168,66 +168,112 @@ actualizar() {
     # problema — o `$?` passava a ser sempre 0 e uma copia falhada seria lida
     # como bem sucedida. Foi o que aconteceu na versao anterior deste ficheiro:
     # `exit=1` e nada mais no ecra, porque o script morria sem dizer porquê.
-    if saida=$($compose exec -T --user 0:0 mailutils python -c "
-import sqlite3
-a = sqlite3.connect('file:/data/mailutils.db?mode=ro', uri=True)
-b = sqlite3.connect('/data/copia.db')
+    # A base esta em WAL (`PRAGMA journal_mode = WAL`, db.py:224) e e isso que
+    # dita tudo o que segue.
+    #
+    # Em WAL, o SQLite precisa do ficheiro `-shm` para abrir a base, e esse
+    # `-shm` e apagado quando a ultima ligacao fecha em condicoes. O
+    # contentor tinha arrancado dois minutos antes, por isso nao havia `-shm` e
+    # um abrir em `mode=ro` devolvia `unable to open database file`.
+    #
+    # A versao anterior desta copia corria como root e abria em `mode=ro`, por
+    # mesmo a medo que o root deixasse um `-wal` com o dono root e a aplicacao
+    # deixasse de poder escrever na base. Era um risco real, mas troquei um
+    # problema raro por um garantido: em WAL, `mode=ro` quase nunca funciona.
+    #
+    # A resposta e a ordem certa: primeiro como a aplicacao, que e quem tem o
+    # direito de criar o `-shm`. O root so entra se a aplicacao falhar, e
+    # nesse caso o `-shm` que ele cria desaparece quando a ligacao fecha em
+    # condicoes — o `backup()` fecha sempre.
+    #
+    # E `a.backup(b)` da um retrato consistente mesmo com a aplicacao a
+    # escrever. E o que o SQLite faz exactamente para isto.
+    # A base esta em WAL (`PRAGMA journal_mode = WAL`, db.py:224), e isso
+    # condiciona como se pode ler.
+    #
+    # Nao se abre em `mode=ro`: em WAL o SQLite precisa do ficheiro `-shm`, e
+    # esse `-shm` e apagado quando a ultima ligacao fecha em condicoes — que e
+    # o que acontece logo apos um arranque limpo. Uma versao anterior desta
+    # copia abria em `mode=ro` para o root nao deixar um `-wal` com o dono
+    # errado; trocou um problema raro por um garantido.
+    #
+    # `a.backup(b)` e o que o SQLite dá para isto: um retrato consistente,
+    # mesmo com a aplicacao a escrever ao mesmo tempo. Copiar o ficheiro com
+    # `cp` whilst a base esta viva nao da.
+    COPIA_PY='
+import sqlite3, sys
+destino = sys.argv[1]
+a = sqlite3.connect("/data/mailutils.db")
+b = sqlite3.connect(destino)
 a.backup(b)
 b.close()
-c = sqlite3.connect('/data/copia.db')
-estado = c.execute('PRAGMA integrity_check').fetchone()[0]
+c = sqlite3.connect(destino)
+estado = c.execute("PRAGMA integrity_check").fetchone()[0]
 c.close()
-assert estado == 'ok', estado
-" 2>&1); then
-        copiou="sim"
-    else
-        copiou="nao"
-    fi
+if estado != "ok":
+    raise SystemExit("a copia nao passou o integrity_check: " + estado)
+'
+
+    tentar_copia() {
+        # $1: utilizador, vazio para o da aplicacao. $2: caminho de destino.
+        if [ -n "$1" ]; then
+            $compose exec -T --user "$1" mailutils python -c "$COPIA_PY" "$2" 2>&1
+        else
+            $compose exec -T mailutils python -c "$COPIA_PY" "$2" 2>&1
+        fi
+    }
+
+    # Quatro tentativas, porque sao quatro causas distintas e nenhuma delas se
+    # distingue pela mensagem de erro do SQLite — todas dizem "unable to open
+    # database file", que e o mesmo texto para "sem permissao", "sem espaco" e
+    # "montado so de leitura".
+    #
+    #   1. aplicacao, /data   — o caminho normal
+    #   2. root, /data        — /data com o dono errado (imagem antiga)
+    #   3. aplicacao, /tmp    — /data montado so de leitura; /tmp e tmpfs
+    #   4. root, /tmp         — as duas coisas ao mesmo tempo
+    #
+    # A 3 e a 4 existem porque `--actualizar` estava a falhar nao se sabia onde,
+    # e cada ronda de diagnostico custa mais tempo do que quatro linhas de
+    # bash. /tmp e tmpfs quando o contentor corre com `read_only`.
+    copiou="nao"
+    onde=""
+    for tentativa in ":/data/copia.db" "root:/data/copia.db" ":/tmp/copia.db" "root:/tmp/copia.db"; do
+        utilizador=${tentativa%%:*}
+        alvo=${tentativa#*:}
+        if saida=$(tentar_copia "$utilizador" "$alvo"); then
+            copiou="sim"
+            onde="$alvo"
+            [ "$utilizador" = "root" ] && aviso "a aplicacao nao escreve em $alvo; copiei como root"
+            [ "$alvo" = "/tmp/copia.db" ] && aviso "a copia foi feita em $alvo, nao em /data"
+            break
+        fi
+        saida_ultima="$saida"
+    done
 
     if [ "$copiou" != "sim" ]; then
         erro "nao consegui copiar a base de dados. A actualizacao NAO continua."
         erro "o que a copia respondeu, sem filtrar:"
-        printf '%s\n' "$saida" | sed 's/^/    /'
+        printf '%s\n' "$saida_ultima" | sed 's/^/    /'
         erro ""
-        erro "duas causas habituais:"
-        erro "  - o contentor nao esta a correr:  cd $dir && $compose ps"
-        erro "  - a base nao esta onde se espera: cd $dir && $compose exec -T --user 0:0 mailutils ls -l /data"
+        erro "quatro tentativas foram feitas (aplicacao e root, em /data e /tmp)."
+        erro "todas deram o mesmo erro do SQLite, que nao distingue as causas."
+        erro "para as separar:"
+        erro "  cd $dir && $compose exec -T --user 0:0 mailutils ls -la /data"
+        erro "  cd $dir && $compose exec -T --user 0:0 mailutils touch /data/xx && echo 'escreve em /data'"
+        erro "  cd $dir && $compose exec -T --user 0:0 mailutils touch /tmp/xx && echo 'escreve em /tmp'"
+        erro "  df -h /data   # dentro do contentor"
         falhar "nada foi mudado. A base esta intacta."
-    fi
-
-    carimbo=$(date +%Y%m%d-%H%M%S)
-    destino="$dir/copia-$carimbo.db"
-
-    # Duas decisões que nao eram obvias.
-    #
-    # 1) **Fonte em modo de leitura.** Abrir a base a escrever cria ficheiros
-    #    `-wal` e `-shm` — e a correr como root, criava-os com o dono root, e a
-    #    aplicacao deixava de poder escrever na base. `mode=ro` nao escreve
-    #    nada e o `backup()` funciona na mesma.
-    # 2) **Como root.** A copia e uma operacao de operador, nao da aplicacao.
-    #    Correr como root tira a classe inteira de falhas de permissao, e a
-    #    fonte ser de leitura tira o risco que isso trazia.
-    if ! $compose exec -T --user 0:0 mailutils python -c "
-import sqlite3
-a = sqlite3.connect('file:/data/mailutils.db?mode=ro', uri=True)
-b = sqlite3.connect('/data/copia.db')
-a.backup(b)
-b.close()
-c = sqlite3.connect('/data/copia.db')
-assert c.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
-c.close()
-"; then
-        falhar "a copia de seguranca falhou. A actualizacao NAO continua."
     fi
 
     # A copia sai do contentor. Dentro do volume, um `docker compose down -v`
     # leva-a embora — e e precisamente a operação que alguém faz a seguir a uma
     # copia, sem pensar nela.
-    if ! $compose cp mailutils:/data/copia.db "$destino" >/dev/null 2>&1; then
+    if ! $compose cp "mailutils:$onde" "$caminho" >/dev/null 2>&1; then
         falhar "a copia ficou feita mas nao a consegui trazer para $dir. A actualizacao NAO continua."
     fi
-    $compose exec -T --user 0:0 mailutils rm -f /data/copia.db >/dev/null 2>&1 || true
-    printf "%s  copia em %s%s\n" "$G" "$destino" "$N"
+    $compose exec -T --user 0:0 mailutils rm -f "$onde" >/dev/null 2>&1 || true
+    printf "%s  copia em %s%s\n" "$G" "$caminho" "$N"
 
     passo "git pull"
     git -C "$dir" pull --ff-only \
