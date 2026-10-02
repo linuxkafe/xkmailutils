@@ -21,10 +21,12 @@ Duas ferramentas na mesma instalação, com o mesmo motor de score.
 `T017-A` inverte isto — a confirmação passa a ser do **remetente**, e o
 operador passa a ser quem afirma ter o consentimento de quem importa. A segunda
 leitura é mais fraca que a primeira, e por isso o T017-A tem de entregar seis
-portões que juntos a tornam aceitável: `from` confirmado por código, `spam.py`
-no caminho de envio, teto de destinatários por lista, cadência derivada do
-score, unsubscribe com token assinado, e cooldown por endereço. **Retirar um
-destes obriga a dizer qual dos outros deixa de valer.**
+portões que juntos a tornam aceitável: `from` confirmado por código, cooldown de
+pedido de confirmação (que passa a ser **por remetente**, porque a confirmação
+por destinatário sai e o cooldown dela perde o objecto), `spam.py` no caminho de
+envio, teto de destinatários por lista, cadência derivada do score, e unsubscribe
+com token assinado. **Retirar um destes obriga a dizer qual dos outros deixa de
+valer.**
 
 Enquanto o `T017-A` não entrar em `main`, a primeira leitura é a verdade e a
 segunda é plano. `docs/REQUIREMENTS.md` diz qual das duas está em `IMPLEMENTADO`
