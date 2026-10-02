@@ -288,8 +288,10 @@ MUTACOES: tuple[Mutacao, ...] = (
     Mutacao(
         "M-18",
         "src/mailutils/lists/service.py",
-        '            "   AND confirmed_at IS NOT NULL"',
-        '            "   AND 1=1"',
+        "    if not lista_pode_enviar(conn, list_id):\n"
+        '        return {"enviavel": False, "destinatarios": [], "motivo": "sem from confirmado"}',
+        "    if False:\n"
+        '        return {"enviavel": False, "destinatarios": [], "motivo": "sem from confirmado"}',
         (
             "python3",
             "-m",
@@ -298,26 +300,40 @@ MUTACOES: tuple[Mutacao, ...] = (
             "-q",
             "--no-cov",
             "-k",
-            "InvarianteCentral",
+            "InvarianteCentral or RemetenteConfirmado",
         ),
-        "A unica clausula que separa uma lista de contactos de um relay de email "
-        "bombing passa a ser `1=1`. Todos os pendentes — os que receberam um "
-        "codigo de confirmacao e nunca responderam — entram no envio. O produto "
-        "passa a enviar para quem nao pediu, usando o endereco de outra pessoa "
-        "como remetente. E a mutacao que o `CLAUDE.md` proibe em letras: "
-        "`confirmed_at IS NULL` nao entra no SELECT, em nenhum caminho.",
+        "O portao do `from` desaparece de `destinatarios()`: uma lista sem "
+        "remetente confirmado devolve os seus endereços. O produto envia em nome "
+        "de quem nao confirmou nada, a uma lista que o operador nunca fechou. E "
+        "a mutacao que o `CLAUDE.md` proibe em letras: sem `from` confirmado, "
+        "nenhum caminho de envio devolve destinatarios — nem o imediato, nem o "
+        "agendado, nem a reexecucao.\n\n"
+        "**Esta e a M-18 de antes, com outro assunto.** A antiga mutava "
+        "`confirmed_at IS NOT NULL` para `1=1`; a coluna nao existe, e o filtro "
+        "que ela protegia foi retirado por decisao do dono. O que a substituicao "
+        "tem de provar e a mesma coisa com a porta que ficou no lugar — e a porta "
+        "que ficou e o remetente. O `CLAUDE.md` diz que retirar um dos seis "
+        "portoes obriga a dizer qual dos outros deixa de valer; esta mutacao e "
+        "a forma de essa frase ser verificavel.",
         ("F-01",),
     ),
     Mutacao(
         "M-19",
         "src/mailutils/lists/service.py",
-        "and ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations",
-        "and ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations + 10**6",
-        ("python3", "-m", "pytest", "tests/test_lists.py", "-q", "--no-cov", "-k", "AntiAbuso"),
-        "O tecto de confirmacoes por confirmar deixa de existir. Um utilizador "
-        "com sessao importa cinquenta mil enderecos e pede os codigos todos de "
-        "uma vez. E o tecto anti-abuso que o `CLAUDE.md` diz ser feature e nao "
-        "detalhe de implementacao.",
+        "    if passado is not None and passado < settings.confirm_cooldown_seconds:",
+        "    if False and passado is not None and passado < settings.confirm_cooldown_seconds:",
+        ("python3", "-m", "pytest", "tests/test_lists.py", "-q", "--no-cov", "-k", "RemetenteConfirmado"),
+        "O cooldown de pedido de codigo desaparece. Um utilizador com sessao pede "
+        "codigos de confirmacao de `from` sem parar, a um endereco que nao e seu, "
+        "para adivinhar o de outra pessoa. E o mesmo anti-abuso que o `CLAUDE.md` "
+        "proibe afrouxar: o cooldown e feature, nao detalhe de implementacao.\n\n"
+        "**O alvo mudou e a propriedade nao.** O cooldown era por endereco de "
+        "destinatario e protegia o relay de email bombing via codigos de "
+        "confirmacao. Sem confirmacao por destinatario, esse objecto nao existe — "
+        "e o cooldown passou a proteger o pedido de codigo do **remetente**, que "
+        "e a unica coisa que ainda pede codigo. O `CLAUDE.md` foi corrigido "
+        "para dizer isto antes de a mutacao escrever-se, porque a tabela de "
+        "portoes afirmava uma protecao que o codigo ja nao tinha.",
         ("F-01",),
     ),
     Mutacao(
@@ -344,8 +360,10 @@ MUTACOES: tuple[Mutacao, ...] = (
     Mutacao(
         "M-21",
         "src/mailutils/lists/service.py",
-        '            " SET unsubscribed_at = NULL, confirmed_at = NULL,"',
-        '            " SET unsubscribed_at = NULL,"',
+        '            "UPDATE list_addresses SET unsubscribed_at = ?"\n'
+        '            " WHERE id = ? AND unsubscribed_at IS NULL",',
+        '            "UPDATE list_addresses SET unsubscribed_at = ?"\n'
+        '            " WHERE id = ?",',
         (
             "python3",
             "-m",
@@ -354,12 +372,21 @@ MUTACOES: tuple[Mutacao, ...] = (
             "-q",
             "--no-cov",
             "-k",
-            "BypassConsentimento",
+            "LinkAssinado or InvarianteCentral",
         ),
-        "Repor uma inscricao volta a ser `unsubscribed_at = NULL` e mais nada. "
-        "O endereco deixa de estar em `destinatarios()` quando se cancela e "
-        "volta sem ninguem confirmar quando o dono da lista clica em 'Repor'. "
-        "E o M-01: o produto a decidir por quem se cancelou.",
+        "A descadencia deixa de verificar que o endereco estava subscrito. "
+        "`descadenciar()` passa a devolver `True` sempre que o `id` existe, e o "
+        "`address_id` enumeravel de um link re-utilizado volta a escrever um "
+        "timestamp novo em cada clique. E o M-01 pela outra porta: a idempotencia "
+        "e o que impede que o estado de um cancelamento seja reescrito.\n\n"
+        "**A mutacao anterior desta linha foi apagada com a funcionalidade.** "
+        "`repor_inscricao` deixou de existir no `T017-A` — nao ha subscricao para "
+        "repor, porque nao ha confirmacao — e a mutacao que a protegia ficou sem "
+        "subjecto. Esta e a substituta: a propriedade que ela protegia (o produto "
+        "nao decide por quem cancelou, e um cancelamento nao e reversivel) "
+        "mudou de codigo, e a prova muda com ela. Uma mutacao sem subjecto e uma "
+        "mutacao que passa a nao morrer, e uma mutacao que nao morre e uma porta "
+        "que ninguem sabe se esta fechada.",
         ("F-01",),
     ),
     Mutacao(

@@ -54,8 +54,7 @@ def indice(request: Request, conn: Db, session: Active) -> Response:
         {
             "listas": service.listas_do_utilizador(conn, session.user_id),
             "teto": settings.max_list_size,
-            "pendentes": service.pendentes_por_utilizador(conn, session.user_id),
-            "teto_pendentes": settings.max_pending_confirmations,
+            "bloqueadas": service.contar_pendentes_de_envio(conn, session.user_id),
         },
     )
 
@@ -122,8 +121,9 @@ def _contexto_lista(
         "lista": service.lista_do_utilizador(conn, user_id, list_id),
         "enderecos": service.enderecos_da_lista(conn, list_id),
         "teto": settings.max_list_size,
-        "teto_confirmacoes": settings.max_pending_confirmations,
+        "remetentes": service.remetentes_do_utilizador(conn, user_id),
         "max_tentativas": service.MAX_CONFIRM_ATTEMPTS,
+        "pode_enviar": service.lista_pode_enviar(conn, list_id),
         **_resumo_do_pedido(request),
     }
 
@@ -179,11 +179,13 @@ def adicionar(
     email: Annotated[str, Form()] = "",
     nome: Annotated[str, Form()] = "",
 ) -> Response:
-    """Adiciona **um** endereço, sempre por confirmar.
+    """Adiciona **um** endereço, activo.
 
-    Adicionar não envia nada. O email sai quando o utilizador pedir a
-    confirmação, que é um acto separado e explícito — senão cada auto-complete
-    do navegador seria um email para um endereço que ninguém pediu.
+    Antes este endereço nascia por confirmar e esperava um código. Já não
+    nasce assim: entra activo e o operador é quem afirma ter autorização
+    (FR-6.5). Adicionar continua a não enviar nada — não há código para enviar,
+    e o `from` confirmado é o único email que este produto manda a partir de uma
+    lista.
     """
     if not csrf_is_valid(session, csrf_token):
         return ir(request, f"/listas/{list_id}?erro=csrf")
@@ -198,14 +200,6 @@ def adicionar(
         return ir(request, f"/listas/{list_id}?erro=email")
     if service.contar_enderecos(conn, list_id) >= settings.max_list_size:
         return ir(request, f"/listas/{list_id}?erro=teto-lista")
-    # Tecto de pendentes verificado onde o pendente nasce. Ver a nota longa em
-    # `service.importar_csv`: se estivesse em `pedir_confirmacao`, importar
-    # endereços deixava de ser acionável e o utilizador ficava preso.
-    if service.pendentes_por_utilizador(conn, session.user_id) >= (
-        settings.max_pending_confirmations
-    ):
-        return ir(request, f"/listas/{list_id}?erro=teto-confirmacoes")
-
     agora = security.iso(security.utcnow())
     try:
         with transaction(conn):
@@ -226,17 +220,16 @@ async def importar(
     session: Active,
     list_id: int,
     csrf_token: Annotated[str, Form()] = "",
-    confirmar_imediatamente: Annotated[str, Form()] = "",
     ficheiro: Annotated[UploadFile, File()] = None,  # type: ignore[assignment]
 ) -> Response:
-    """Importa um ficheiro de endereços.
+    """Importa um ficheiro de endereços, activos.
 
-    Por defeito, **importar não confirma ninguém** (FR-6.5). Os endereços entram
-    como pendentes e o utilizador dispara a confirmação.
-
-    Se `confirmar_imediatamente` estiver presente no formulário, os endereços são
-    inseridos já com `confirmed_at` preenchido, assumindo que o operador tem
-    consentimento prévio. É uma operação de operador e está desligada por defeito.
+    **Não há caminho de importação que confirme alguém** (FR-6.5), e o campo
+    `confirmar_imediatamente` saiu do formulário por isso: existia só para dar
+    ao operador a opção de assumir o consentimento, e a decisão foi assumir sem
+    perguntar. O `aviso_consentimento` que a página mostra a seguir é a
+    contrapartida — quem importa está a declarar que tem autorização de quem
+    importou, e o produto diz isso em vez de o pressupor em silêncio.
 
     A extensão não é filtreada, por decisão: uma importação rejeitada por
     extensão obriga quem tem o ficheiro certo a renomeá-lo, e o que interessa
@@ -259,10 +252,7 @@ async def importar(
         return ir(request, f"/listas/{list_id}?erro=grande")
 
     try:
-        confirmar = confirmar_imediatamente.lower() in ("on", "1", "true", "yes")
-        resultado = service.importar_csv(
-            conn, session.user_id, list_id, conteudo, settings, confirmar_imediatamente=confirmar
-        )
+        resultado = service.importar_csv(conn, session.user_id, list_id, conteudo, settings)
     except service.ErroLista as erro:
         return ir(request, f"/listas/{list_id}?erro=importacao&detalhe={_motivo(erro)}")
 
@@ -271,16 +261,26 @@ async def importar(
     return page(request, "lista.html", contexto, status_code=200)
 
 
-@router.post("/{list_id}/confirmar-pedido")
-def pedir_confirmacao(
+@router.post("/{list_id}/from")
+def definir_from(
     request: Request,
     conn: Db,
     session: Active,
     list_id: int,
     csrf_token: Annotated[str, Form()] = "",
-    enderecos: Annotated[str, Form()] = "",
+    sender_id: Annotated[str, Form()] = "",
 ) -> Response:
-    """Envia os códigos. Só a pendentes, e com os três guardas do serviço."""
+    """Escolhe o `from` da lista. Só um `from` **deste** utilizador (FR-6.10).
+
+    Aceitar um `sender_id` alheio e recusar mais tarde, no `SELECT` de envio,
+    seria tarde: a lista ficava a mostrar um `from` que não pode usar, e a
+    interface a dizer que a lista está pronta. O teste de dono acontece aqui.
+
+    Um valor vazio **solta** o `from`, e é como se recua. Escolher um `from` por
+    confirmar é permitido de propósito — o operador tem de poder montar a lista
+    antes de abrir o email — mas a lista não envia até ele estar confirmado, e
+    a página diz isso.
+    """
     if not csrf_is_valid(session, csrf_token):
         return ir(request, f"/listas/{list_id}?erro=csrf")
     try:
@@ -288,53 +288,82 @@ def pedir_confirmacao(
     except _NaoEncontrado:
         return ir(request, "/listas?erro=lista-inexistente")
 
-    settings = _settings(request)
-    ids = _ids_do_formulario(enderecos)
-    if not ids:
-        return ir(request, f"/listas/{list_id}?erro=selecciona")
+    bruto = (sender_id or "").strip()
+    escolhido: int | None = None
+    if bruto:
+        if not bruto.isdigit():
+            return ir(request, f"/listas/{list_id}?erro=from-alheio")
+        escolhido = int(bruto)
 
+    if not service.definir_from_da_lista(conn, session.user_id, list_id, escolhido):
+        # "Alheio" e "inexistente" dão a mesma resposta, de propósito: dizer qual
+        # dos dois foi seria confirmar a existência do `from` de outro utilizador.
+        return ir(request, f"/listas/{list_id}?erro=from-alheio")
+    return ir(request, f"/listas/{list_id}?aviso=from")
+
+
+@router.post("/remetentes")
+def registar_remetente(
+    request: Request,
+    conn: Db,
+    session: Active,
+    csrf_token: Annotated[str, Form()] = "",
+    email: Annotated[str, Form()] = "",
+) -> Response:
+    """Regista um `from` novo, por confirmar. Reutilizável entre listas.
+
+    Um `from` confirmado uma vez vale para todas as listas do utilizador
+    (FR-6.9). Se já existia, não é erro: é o caso normal de quem tem três listas
+    do mesmo endereço.
+    """
+    if not csrf_is_valid(session, csrf_token):
+        return ir(request, "/listas?erro=csrf")
     try:
-        resultado = service.pedir_confirmacao(conn, session.user_id, settings, list_id, ids)
+        service.registar_remetente(conn, session.user_id, email or "")
+    except service.ErroLista:
+        return ir(request, "/listas?erro=email")
+    return ir(request, "/listas?aviso=remetente")
+
+
+@router.post("/remetentes/{sender_id}/pedir-codigo")
+def pedir_codigo_remetente(
+    request: Request,
+    conn: Db,
+    session: Active,
+    sender_id: int,
+    csrf_token: Annotated[str, Form()] = "",
+) -> Response:
+    """Manda o código do `from`. Sessão, dono, e o cooldown do serviço.
+
+    A resposta **não** traz o código, nem num caso de erro. O serviço é quem
+    envia o email; a rota só diz que foi. Um código na resposta seria um código
+    que chega a quem tem sessão e clica no botão — que é exactamente quem o
+    sistema de segurança não quer a poder confirmar um `from`.
+    """
+    if not csrf_is_valid(session, csrf_token):
+        return ir(request, "/listas?erro=csrf")
+    try:
+        service.pedir_confirmacao_remetente(conn, session.user_id, sender_id, _settings(request))
     except service.ErroConfirmacao:
-        return ir(request, f"/listas/{list_id}?erro=confirmacao")
-
-    # M-08: a soma dizia "enviados" a quem não recebeu nada. O aviso passa a
-    # descrever as quatro contagens, e a que interessa é `enviados`.
-    return ir(request, f"/listas/{list_id}?aviso=confirmacao&resumo={_resumo(resultado)}")
+        return ir(request, "/listas?erro=codigo")
+    return ir(request, "/listas?aviso=codigo")
 
 
-def _resumo(resultado: dict[str, int]) -> str:
-    """As quatro contagens num query parameter.
-
-    Uma querystring transporta texto, não um dicionário. A alternativa — a
-    sessão — seria estado de servidor para um número, e o dono da lista recarrega
-    a página e perde-o. Serializa-se, e o template des-serializa pela
-    operação inversa.
-
-    Os números são inteiros do serviço; nada que o utilizador escreveu entra
-    aqui, e por isso não há reflex a sanitizar.
-    """
-    return (
-        f"{resultado['enviados']}-{resultado['ja_confirmados']}"
-        f"-{resultado['em_cooldown']}-{resultado['excedidos']}"
-    )
-
-
-def _ids_do_formulario(bruto: str) -> list[int]:
-    """Lê os `address_id` escolhidos num formulário de caixas.
-
-    Filtra em vez de `int()` a arder: um campo manipulado não pode levantar
-    `ValueError` e devolver um 500 a quem não fez nada de errado além de estar
-    a mexer no formulário.
-    """
-    ids: list[int] = []
-    for parte in (bruto or "").split(","):
-        parte = parte.strip()
-        if parte.isdigit():
-            valor = int(parte)
-            if valor not in ids:
-                ids.append(valor)
-    return ids
+@router.post("/remetentes/{sender_id}/confirmar")
+def confirmar_remetente(
+    request: Request,
+    conn: Db,
+    session: Active,
+    sender_id: int,
+    csrf_token: Annotated[str, Form()] = "",
+    codigo: Annotated[str, Form()] = "",
+) -> Response:
+    """Confirma o `from`. O código vai por `POST` e nunca volta no URL."""
+    if not csrf_is_valid(session, csrf_token):
+        return ir(request, "/listas?erro=csrf")
+    if service.confirmar_remetente(conn, session.user_id, sender_id, (codigo or "").strip()):
+        return ir(request, "/listas?aviso=confirmado")
+    return ir(request, "/listas?erro=codigo")
 
 
 @router.post("/{list_id}/enderecos/{address_id}/remover")
@@ -356,121 +385,6 @@ def remover(
     return ir(request, f"/listas/{list_id}?aviso=removido")
 
 
-@router.post("/{list_id}/enderecos/{address_id}/descadenciar")
-def repor_inscricao(
-    request: Request,
-    conn: Db,
-    session: Active,
-    list_id: int,
-    address_id: int,
-    csrf_token: Annotated[str, Form()] = "",
-) -> Response:
-    """Repõe uma subscrição cancelada, **enviando um novo código**.
-
-    Só o dono da lista pode disparar o pedido, mas não pode confirmar: a
-    confirmação vai para quem cancelou. Antes desta correcção o POST fazia só
-    `unsubscribed_at = NULL` e o endereço voltava a receber no instante, sem
-    ninguém pedir — o produto a decidir por quem cancelou. (M-01)
-    """
-    if not csrf_is_valid(session, csrf_token):
-        return ir(request, f"/listas/{list_id}?erro=csrf")
-    try:
-        _exige_lista(conn, session, list_id)
-    except _NaoEncontrado:
-        return ir(request, "/listas?erro=lista-inexistente")
-    try:
-        reposto = service.repor_inscricao(
-            conn, _settings(request), session.user_id, list_id, address_id
-        )
-    except service.ErroLista:
-        return ir(request, "/listas?erro=lista-inexistente")
-    if not reposto:
-        return ir(request, f"/listas/{list_id}?erro=reposicao")
-    return ir(request, f"/listas/{list_id}?aviso=reposto")
-
-
-@router.get("/{list_id}/confirmar/{address_id}")
-def formulario_confirmar(
-    request: Request,
-    conn: Db,
-    list_id: int,
-    address_id: int,
-    token: Annotated[str, Query()] = "",
-) -> Response:
-    """O formulário que **o destinatário** vê depois de clicar no email.
-
-    Não exige sessão, porque o destinatário não tem conta nenhuma — é essa a
-    razão de o link ser o que traz a identificação. A rota **não** confia no
-    `address_id` do caminho: o token assinado tem de concordar com ele, ou o
-    pedido é recusado. (B-04)
-
-    Antes desta correcção a rota exigia sessão do **dono da lista** e lia o
-    endereço sem verificar dono nenhum. Isto é, o dono confirmava em nome do
-    destinatário e qualquer conta da instalação lia qualquer email.
-    """
-    settings = _settings(request)
-    if not _token_valido(
-        settings, web.PURPOSE_CONFIRM, list_id, address_id, token, confirmando=True
-    ):
-        return ir(request, "/listas?erro=token")
-
-    endereco = service.endereco_da_lista(conn, list_id, address_id)
-    if endereco is None or endereco["confirmed_at"] is not None:
-        return ir(request, "/listas?erro=token")
-
-    return page(
-        request,
-        "confirmar.html",
-        {
-            "endereco": endereco,
-            "lista": service.lista_publico(conn, list_id),
-            "address_id": address_id,
-            "token": token,
-        },
-    )
-
-
-@router.post("/{list_id}/confirmar/{address_id}")
-def submeter_confirmacao(
-    request: Request,
-    conn: Db,
-    list_id: int,
-    address_id: int,
-    token: Annotated[str, Form()] = "",
-    codigo: Annotated[str, Form()] = "",
-) -> Response:
-    """Confirma a inscrição, com o código que foi enviado para este endereço.
-
-    O código de 6 dígitos é o que prova que quem pede é quem recebe o email, e
-    o token é o que prova que este pedido é para este endereço. Os dois são
-    necessários: o código sozinho é adivinhável, o token sozinho é
-    encaminhável.
-    """
-    settings = _settings(request)
-    if not _token_valido(
-        settings, web.PURPOSE_CONFIRM, list_id, address_id, token, confirmando=True
-    ):
-        return ir(request, "/listas?erro=token")
-    try:
-        service.confirmar(conn, list_id, address_id, (codigo or "").strip())
-    except service.ErroConfirmacao:
-        # O utilizador **é** o destinatário e não tem sessão a que voltar. Um
-        # redirect para `/listas` seria perdê-lo; a mensagem vai para o query
-        # string da própria página.
-        return ir(
-            request,
-            f"/listas/{list_id}/confirmar/{address_id}?token={token}&erro=confirmacao",
-        )
-    return ir(request, f"/listas/{list_id}/confirmado")
-
-
-@router.get("/{list_id}/confirmado")
-def confirmado(request: Request, conn: Db, list_id: int) -> Response:
-    """A página de depois. Não mostra a lista, só confirma que ficou feito."""
-    lista = service.lista_publico(conn, list_id)
-    return page(request, "confirmado.html", {"lista": lista})
-
-
 @router.get("/{list_id}/descadenciar/{address_id}")
 def descadenciar_link(
     request: Request,
@@ -489,9 +403,7 @@ def descadenciar_link(
     este mesmo caminho. Ver o follow-up do T015.
     """
     settings = _settings(request)
-    if not _token_valido(
-        settings, web.PURPOSE_UNSUBSCRIBE, list_id, address_id, token, confirmando=False
-    ):
+    if not _token_valido(settings, web.PURPOSE_UNSUBSCRIBE, list_id, address_id, token):
         return ir(request, "/listas?erro=token")
     service.descadenciar(conn, address_id)
     return ir(request, f"/listas/{list_id}/descadenciado")
@@ -509,24 +421,27 @@ def _token_valido(
     list_id: int,
     address_id: int,
     token: str,
-    *,
-    confirmando: bool,
 ) -> bool:
-    """Verifica o token do link e o prazo certo para ele.
+    """Verifica o token do link de descadência.
 
-    O prazo de confirmação é o do OTP (10 minutos): é um código de uso único e
-    breve. O de descadência é muito mais longo, porque uma pessoa que se
-    descadencia no primeiro dia e se arrepende no vigésimo quinto tem de
-    conseguir voltar atrás. Confundir os dois prazos é um bug de política, não de
-    código.
+    Este era o validador de dois prazos: o do OTP, curto, para confirmar, e o da
+    descadência, longo, para se arrepender no vigésimo quinto dia. Com o
+    `T017-A` só resta o segundo, e uma função com dois caminhos em que um
+    morreu é um caminho morto à espera de alguém lhe chamar com o valor errado.
+
+    O prazo é `unsubscribe_token_days`, e não o do OTP porque quem se descadencia
+    no primeiro dia e se arrepende passados vinte e cinco tem de conseguir
+    voltar atrás.
     """
-    if confirmando:
-        salt = web.LINK_SALT_CONFIRM
-        max_age = settings.otp_ttl_minutes * 60
-    else:
-        salt = web.LINK_SALT_UNSUBSCRIBE
-        max_age = settings.unsubscribe_token_days * 24 * 3600
-    return web.verificar_link(settings, purpose, list_id, address_id, token, salt, max_age)
+    return web.verificar_link(
+        settings,
+        purpose,
+        list_id,
+        address_id,
+        token,
+        web.LINK_SALT_UNSUBSCRIBE,
+        settings.unsubscribe_token_days * 24 * 3600,
+    )
 
 
 __all__ = ["router"]

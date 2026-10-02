@@ -679,3 +679,220 @@ class TestOComposeCompativelComAVersao:
         corpo = _corpo_da_funcao(deploy)
         assert "a.backup(b)" in corpo, "a cópia tem de usar sqlite3 backup()"
         assert "PRAGMA integrity_check" in corpo, "a cópia não é verificada"
+
+
+# --------------------------------------------------------------------------
+# T017-A: migração 3 → 5. A lista deixa de confirmar destinatários e passa a
+# ter um remetente confirmado. São testes de migração e não de serviço porque o
+# caminho perigoso aqui é a reconstrução de `list_addresses`: SQLite não faz
+# `DROP COLUMN` em toda a versão, e quem o fizer mal perde endereços sem dar
+# erro nenhum.
+# --------------------------------------------------------------------------
+
+
+def _base_v3_com_lista(caminho: Path) -> int:
+    """Base no esquema da v3 com uma lista e três endereços dentro.
+
+    Reproduz a forma que o `T014` criou: `list_addresses` com cinco colunas de
+    confirmação. O endereço descadenciado é o que a migração **não** pode
+    perder — é o registo que impede uma reexecução de mandar para quem pediu
+    para sair.
+    """
+    conn = db.connect(caminho)
+    conn.executescript(
+        """
+        CREATE TABLE users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL, is_admin INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            must_change_password INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL, password_changed_at TEXT);
+        CREATE TABLE recipient_lists (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            name       TEXT    NOT NULL,
+            created_at TEXT    NOT NULL,
+            UNIQUE (user_id, name)
+        );
+        CREATE TABLE list_addresses (
+            id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+            list_id                INTEGER NOT NULL
+                                    REFERENCES recipient_lists(id) ON DELETE CASCADE,
+            email                  TEXT    NOT NULL,
+            name                   TEXT    NOT NULL DEFAULT '',
+            confirmed_at           TEXT,
+            confirmation_hash      TEXT,
+            confirmation_expires_at TEXT,
+            confirmation_attempts  INTEGER NOT NULL DEFAULT 0,
+            confirmation_sent_at   TEXT,
+            unsubscribed_at        TEXT,
+            created_at             TEXT    NOT NULL,
+            UNIQUE (list_id, email)
+        );
+        """
+    )
+    conn.execute(
+        "INSERT INTO users (email, password_hash, created_at) VALUES (?, 'x', '2026-09-01')",
+        ("dono@exemplo.pt",),
+    )
+    conn.execute(
+        "INSERT INTO recipient_lists (user_id, name, created_at)"
+        " VALUES (1, 'clientes', '2026-09-01')"
+    )
+    # Um confirmado, um pendente, um descadenciado. Os três estados deixam de
+    # existir no `T017-A` — menos o descadenciado, que sobrevive a tudo.
+    conn.executemany(
+        "INSERT INTO list_addresses (list_id, email, name, confirmed_at, unsubscribed_at,"
+        " created_at) VALUES (1, ?, ?, ?, ?, '2026-09-01')",
+        [
+            ("confirmado@exemplo.pt", "Ana", "2026-09-02", None),
+            ("pendente@exemplo.pt", "Bruno", None, None),
+            ("saiu@exemplo.pt", "Carla", "2026-09-03", "2026-09-10"),
+        ],
+    )
+    conn.execute("PRAGMA user_version = 3")
+    conn.commit()
+    conn.close()
+    return 1
+
+
+def _colunas(caminho: Path, tabela: str) -> set[str]:
+    conn = db.connect(caminho)
+    try:
+        return {linha["name"] for linha in conn.execute(f"PRAGMA table_info({tabela})")}
+    finally:
+        conn.close()
+
+
+def test_a_migracao_da_a_lista_um_campo_de_remetente(tmp_path: Path) -> None:
+    """A lista ganha `sender_id`, e uma lista antiga **fica sem remetente**.
+
+    A alternativa tentadora seria criar um remetente para cada lista que já
+    existe, com `confirmed_at` nulo. Não há de onde tirar o endereço, e um
+    remetente com email inventado é pior do que a ausência: parece um portão e
+    não é. Fica `NULL`, que é o mesmo estado que uma lista recém-criada tem
+    antes de o utilizador escolher o `from`, e o portão trata dos dois igual.
+    """
+    user_id = _base_v3_com_lista(caminho := tmp_path / "mailutils.db")
+    db.migrate(db.connect(caminho))
+
+    conn = db.connect(caminho)
+    try:
+        existe = conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'senders'"
+        ).fetchone()[0]
+        assert existe, "a tabela `senders` não foi criada"
+        nada = conn.execute("SELECT COUNT(*) FROM senders").fetchone()[0]
+        lista = conn.execute(
+            "SELECT sender_id, user_id FROM recipient_lists WHERE id = 1"
+        ).fetchone()
+    finally:
+        conn.close()
+
+    assert nada == 0, (
+        f"a migração inventou {nada} remetentes. Um remetente com email "
+        "fabricado parece um portão de consentimento e não o é"
+    )
+    assert lista["sender_id"] is None, (
+        "a lista antiga tem de ficar sem remetente, para o utilizador escolher "
+        "o `from` e o confirmar ele próprio"
+    )
+    assert lista["user_id"] == user_id, "a lista mudou de dono"
+
+
+def test_a_migracao_tira_as_colunas_de_confirmacao_do_endereco(tmp_path: Path) -> None:
+    """Ver o docstring do teste anterior: `tmp_path` é a base de dados em disco."""
+    caminho = tmp_path / "mailutils.db"
+    """As cinco colunas de confirmação saem; `unsubscribed_at` fica.
+
+    Deixar as colunas seria um caminho aberto para reintroduzir o portão antigo:
+    um `SELECT` novo passa a não ter de onde tirar `confirmed_at`, e é
+    exactamente esse desaparecimento que força quem escreve a pensar.
+    """
+    _base_v3_com_lista(caminho)
+    db.migrate(db.connect(caminho))
+
+    colunas = _colunas(caminho, "list_addresses")
+    mortas = [
+        "confirmed_at",
+        "confirmation_hash",
+        "confirmation_expires_at",
+        "confirmation_attempts",
+        "confirmation_sent_at",
+    ]
+    assert not (set(mortas) & colunas), (
+        f"as colunas de confirmação ainda existem: {set(mortas) & colunas}"
+    )
+    assert {"email", "name", "unsubscribed_at", "created_at"} <= colunas, (
+        f"a reconstrução perdeu colunas que ainda são precisas: {colunas}"
+    )
+
+
+def test_a_migracao_preserva_enderecos_e_o_descadenciado(tmp_path: Path) -> None:
+    """Ver o docstring do teste anterior: `tmp_path` é a base de dados em disco."""
+    caminho = tmp_path / "mailutils.db"
+    """O teste que justifica ter escrito a migração.
+
+    Reconstruir `list_addresses` passa por `DROP TABLE`. Se o `INSERT ... SELECT`
+    errar um nome ou esquecer uma coluna, os endereços desaparecem sem erro
+    nenhum — a migração " corre" e a lista fica vazia. E o descadenciado é o
+    pior dos três: perdê-lo devolve alguém que pediu para sair ao `SELECT` de
+    envio.
+    """
+    _base_v3_com_lista(caminho)
+    db.migrate(db.connect(caminho))
+
+    conn = db.connect(caminho)
+    try:
+        linhas = conn.execute(
+            "SELECT email, name, unsubscribed_at FROM list_addresses ORDER BY email"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    vistos = [linha["email"] for linha in linhas]
+    assert len(linhas) == 3, f"a migração perdeu endereços: {vistos}"
+    por_email = {linha["email"]: linha for linha in linhas}
+    assert "pendente@exemplo.pt" in por_email, "o endereço por confirmar desapareceu"
+    assert por_email["saiu@exemplo.pt"]["unsubscribed_at"] == "2026-09-10", (
+        "o descadenciado perdeu o `unsubscribed_at`: passaria a receber sem "
+        "ter pedido, e é a linha que tem de sobreviver a tudo"
+    )
+    assert por_email["confirmado@exemplo.pt"]["unsubscribed_at"] is None, (
+        "um endereço que não se descadencou não pode nascer descadenciado"
+    )
+    assert por_email["pendente@exemplo.pt"]["name"] == "Bruno", "o nome do endereço sumiu"
+
+
+def test_a_migracao_twice_mantem_a_base_como_estava(tmp_path: Path) -> None:
+    """Correr `migrate()` duas vezes dá o mesmo resultado que uma.
+
+    A migração executa *todos* os statements a cada arranque e só no fim
+    escreve o `user_version`, o que torna a idempotência uma propriedade que se
+    tem de provar e não uma que se depreende. A reconstrução de
+    `list_addresses` é o ponto onde isto é fácil de estragar: o guarda tem de
+    ser "ainda existe a coluna antiga?", e não "a base parece migrada?".
+
+    O `DROP TABLE` é o que torna o erro visível — se o guarda não funcionar, a
+    segunda passagem reconstrói a partir de uma tabela **já sem** as colunas de
+    confirmação e o `SELECT` falha, ou pior, reconstrói vazia.
+    """
+    _base_v3_com_lista(caminho := tmp_path / "mailutils.db")
+    conn = db.connect(caminho)
+    db.migrate(conn)
+    antes = conn.execute("SELECT COUNT(*) FROM list_addresses").fetchone()[0]
+    db.migrate(conn)
+    depois = conn.execute("SELECT COUNT(*) FROM list_addresses").fetchone()[0]
+    descadenciado = conn.execute(
+        "SELECT unsubscribed_at FROM list_addresses WHERE email = 'saiu@exemplo.pt'"
+    ).fetchone()
+    senders = conn.execute("SELECT COUNT(*) FROM senders").fetchone()[0]
+    conn.close()
+
+    assert antes == depois == 3, (
+        f"o segundo arranque mudou o número de endereços: {antes} -> {depois}"
+    )
+    assert descadenciado is not None and descadenciado[0] == "2026-09-10", (
+        "o segundo arranque perdeu o `unsubscribed_at`"
+    )
+    assert senders == 0, f"o segundo arranque inventou {senders} remetentes"

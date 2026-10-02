@@ -32,17 +32,19 @@ CSRF_SALT = "mailutils-csrf-v1"
 
 #: Salts dos tokens de **propósito** — os que vivem num link e não numa sessão.
 #:
-#: São salts separados, e não o CSRF reutilizado, por uma razão que só aparece
-#: quando alguém tenta reuse: o `purpose` vai dentro do payload assinado. Um
-#: token de confirmação carrega `("confirmar", address_id)` e um de descadencia
-#: carrega `("descadenciar", address_id)`. Verificar o propósito errado falha,
-#: porque o payload não bate — mesmo que os dois tokens usem o mesmo segredo.
-LINK_SALT_CONFIRM = "mailutils-confirmar-lista-v1"
+#: O salt não é o CSRF reutilizado, por uma razão que só aparece quando alguém
+#: tenta reusar: o `purpose` vai dentro do payload assinado, e verificar o
+#: propósito errado falha porque o payload não bate — mesmo que os dois tokens
+#: usem o mesmo segredo.
+#:
+#: Este era um par de salts. O `T017-A` tirou a confirmação de destinatários e
+#: com ela o token de confirmação, e ficou só a descadência. Guardar o par morto
+#: seria guardar uma constante cujo nome sugere uma capacidade que o produto já
+#: não tem — e cujo reuso num link novo daria ao novo link a autoridade do
+#: antigo. Se amanhã houver outro link, ganha o seu valor **e** o seu salt.
 LINK_SALT_UNSUBSCRIBE = "mailutils-descadenciar-lista-v1"
 
-#: Os dois propósitos que viajam dentro do payload assinado. Se amanhã houver um
-#: terceiro link, ganha o seu valor e o seu salt — não se reutiliza um destes.
-PURPOSE_CONFIRM = "confirmar"
+#: O propósito que viaja dentro do payload assinado.
 PURPOSE_UNSUBSCRIBE = "descadenciar"
 
 

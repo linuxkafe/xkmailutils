@@ -59,7 +59,7 @@ FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_tema_
 ```
 FAILED e2e/test_fluxo_completo.py::test_tema_claro_por_clique - playwright._i...
 FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
-2 failed, 9 deselected in 23.46s
+2 failed, 9 deselected in 23.29s
     (24s)
 ```
 
@@ -75,7 +75,7 @@ FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
 ```
 =========================== short test summary info ============================
 FAILED e2e/test_fluxo_completo.py::test_o_score_actualiza_enquanto_se_escreve
-1 failed, 10 deselected in 3.33s
+1 failed, 10 deselected in 3.37s
     (4s)
 ```
 
@@ -91,7 +91,7 @@ FAILED e2e/test_fluxo_completo.py::test_o_score_actualiza_enquanto_se_escreve
 ```
 =========================== short test summary info ============================
 FAILED tests/test_spam.py::TestOScoreEInteiro::test_o_analisador_da_um_int - ...
-1 failed, 60 passed in 0.10s
+1 failed, 60 passed in 0.11s
     (1s)
 ```
 
@@ -107,7 +107,7 @@ FAILED tests/test_spam.py::TestOScoreEInteiro::test_o_analisador_da_um_int - ...
 ```
 =========================== short test summary info ============================
 FAILED e2e/test_fluxo_completo.py::test_a_barra_e_discriminante_com_um_score_nao_zero
-1 failed, 10 deselected in 3.89s
+1 failed, 10 deselected in 3.80s
     (4s)
 ```
 
@@ -123,7 +123,7 @@ FAILED e2e/test_fluxo_completo.py::test_a_barra_e_discriminante_com_um_score_nao
 ```
 =========================== short test summary info ============================
 FAILED tests/test_editor_flows.py::TestOFicheiroExportadoMostraOSeusEstilos::test_permite_estilos_inline
-1 failed, 3 passed, 56 deselected in 1.22s
+1 failed, 3 passed, 56 deselected in 1.28s
     (2s)
 ```
 
@@ -139,7 +139,7 @@ FAILED tests/test_editor_flows.py::TestOFicheiroExportadoMostraOSeusEstilos::tes
 ```
 =========================== short test summary info ============================
 FAILED tests/test_editor_flows.py::TestEditor::test_uma_assinatura_vazia_nao_promete_que_e_segura
-1 failed, 59 deselected in 0.29s
+1 failed, 59 deselected in 0.31s
     (1s)
 ```
 
@@ -173,8 +173,8 @@ FAILED tests/test_browser_regressions.py::TestNenhumSelectorOrfaoEmAppCss::test_
 ```
 =========================== short test summary info ============================
 FAILED e2e/test_fluxo_completo.py::test_o_preview_mostra_a_assinatura_como_ela_sai
-1 failed, 10 deselected in 4.63s
-    (5s)
+1 failed, 10 deselected in 3.94s
+    (4s)
 ```
 
 ### M-12 — F-01
@@ -189,7 +189,7 @@ FAILED e2e/test_fluxo_completo.py::test_o_preview_mostra_a_assinatura_como_ela_s
 ```
 FAILED e2e/test_fluxo_completo.py::test_tema_claro_por_clique - playwright._i...
 FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
-2 failed, 9 deselected in 23.92s
+2 failed, 9 deselected in 23.54s
     (24s)
 ```
 
@@ -253,8 +253,8 @@ FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test
 ```
 FAILED tests/test_editor_flows.py::TestEstruturaDaAssinatura::test_toda_a_estrutura_chega_ao_html_exportado
 FAILED tests/test_editor_flows.py::TestEstruturaDaAssinatura::test_as_estruturas_sao_visivelmente_diferentes
-7 failed, 254 passed in 20.76s
-    (22s)
+7 failed, 254 passed in 19.37s
+    (20s)
 ```
 
 ### M-17 — F-03
@@ -276,33 +276,39 @@ FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_todo_
 ### M-18 — F-01
 
 - **Ficheiro:** `src/mailutils/lists/service.py`
-- **Mutação:** `"   AND confirmed_at IS NOT NULL"` → `"   AND 1=1"`
+- **Mutação:** `if not lista_pode_enviar(conn, list_id):
+        return {"enviavel": False, "destinatarios": [], "motivo": "sem from confirmado"}` → `if False:
+        return {"enviavel": False, "destinatarios": [], "motivo": "sem from confirmado"}`
 - **Estado:** `morreu`
-- **Comando:** `python3 -m pytest tests/test_lists.py -q --no-cov -k InvarianteCentral`
-- **Porque:** A unica clausula que separa uma lista de contactos de um relay de email bombing passa a ser `1=1`. Todos os pendentes — os que receberam um codigo de confirmacao e nunca responderam — entram no envio. O produto passa a enviar para quem nao pediu, usando o endereco de outra pessoa como remetente. E a mutacao que o `CLAUDE.md` proibe em letras: `confirmed_at IS NULL` nao entra no SELECT, em nenhum caminho.
+- **Comando:** `python3 -m pytest tests/test_lists.py -q --no-cov -k InvarianteCentral or RemetenteConfirmado`
+- **Porque:** O portao do `from` desaparece de `destinatarios()`: uma lista sem remetente confirmado devolve os seus endereços. O produto envia em nome de quem nao confirmou nada, a uma lista que o operador nunca fechou. E a mutacao que o `CLAUDE.md` proibe em letras: sem `from` confirmado, nenhum caminho de envio devolve destinatarios — nem o imediato, nem o agendado, nem a reexecucao.
+
+**Esta e a M-18 de antes, com outro assunto.** A antiga mutava `confirmed_at IS NOT NULL` para `1=1`; a coluna nao existe, e o filtro que ela protegia foi retirado por decisao do dono. O que a substituicao tem de provar e a mesma coisa com a porta que ficou no lugar — e a porta que ficou e o remetente. O `CLAUDE.md` diz que retirar um dos seis portoes obriga a dizer qual dos outros deixa de valer; esta mutacao e a forma de essa frase ser verificavel.
 - **Saída observada:**
 
 ```
-FAILED tests/test_lists.py::TestInvarianteCentral::test_confirmado_passa_a_ser_destinatario
-FAILED tests/test_lists.py::TestInvarianteCentral::test_descadenciado_deixa_de_ser_destinatario
-4 failed, 2 passed, 65 deselected in 1.58s
-    (2s)
+FAILED tests/test_lists.py::TestInvarianteCentral::test_importado_nao_e_destinatario
+FAILED tests/test_lists.py::TestRemetenteConfirmado::test_uma_lista_sem_remetente_nao_envia
+2 failed, 12 passed, 41 deselected in 4.62s
+    (5s)
 ```
 
 ### M-19 — F-01
 
 - **Ficheiro:** `src/mailutils/lists/service.py`
-- **Mutação:** `and ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations` → `and ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations + 10**6`
+- **Mutação:** `if passado is not None and passado < settings.confirm_cooldown_seconds:` → `if False and passado is not None and passado < settings.confirm_cooldown_seconds:`
 - **Estado:** `morreu`
-- **Comando:** `python3 -m pytest tests/test_lists.py -q --no-cov -k AntiAbuso`
-- **Porque:** O tecto de confirmacoes por confirmar deixa de existir. Um utilizador com sessao importa cinquenta mil enderecos e pede os codigos todos de uma vez. E o tecto anti-abuso que o `CLAUDE.md` diz ser feature e nao detalhe de implementacao.
+- **Comando:** `python3 -m pytest tests/test_lists.py -q --no-cov -k RemetenteConfirmado`
+- **Porque:** O cooldown de pedido de codigo desaparece. Um utilizador com sessao pede codigos de confirmacao de `from` sem parar, a um endereco que nao e seu, para adivinhar o de outra pessoa. E o mesmo anti-abuso que o `CLAUDE.md` proibe afrouxar: o cooldown e feature, nao detalhe de implementacao.
+
+**O alvo mudou e a propriedade nao.** O cooldown era por endereco de destinatario e protegia o relay de email bombing via codigos de confirmacao. Sem confirmacao por destinatario, esse objecto nao existe — e o cooldown passou a proteger o pedido de codigo do **remetente**, que e a unica coisa que ainda pede codigo. O `CLAUDE.md` foi corrigido para dizer isto antes de a mutacao escrever-se, porque a tabela de portoes afirmava uma protecao que o codigo ja nao tinha.
 - **Saída observada:**
 
 ```
-FAILED tests/test_lists.py::TestLimitesAntiAbuso::test_teto_de_pendentes_acumula_entre_listas
-FAILED tests/test_lists.py::TestLimitesAntiAbuso::test_confirmar_liberta_uma_vaga
-3 failed, 4 passed, 64 deselected in 1.59s
-    (2s)
+=========================== short test summary info ============================
+FAILED tests/test_lists.py::TestRemetenteConfirmado::test_o_cooldown_e_por_remetente
+1 failed, 9 passed, 45 deselected in 2.81s
+    (4s)
 ```
 
 ### M-20 — F-01
@@ -316,23 +322,29 @@ FAILED tests/test_lists.py::TestLimitesAntiAbuso::test_confirmar_liberta_uma_vag
 
 ```
 =========================== short test summary info ============================
-FAILED tests/test_lists.py::TestLinkAssinado::test_o_token_nao_abre_outro_endereco
-1 failed, 10 passed, 60 deselected in 2.79s
-    (4s)
+FAILED tests/test_lists.py::TestLinkAssinado::test_o_token_de_um_nao_abre_o_outro
+1 failed, 5 passed, 49 deselected in 1.73s
+    (3s)
 ```
 
 ### M-21 — F-01
 
 - **Ficheiro:** `src/mailutils/lists/service.py`
-- **Mutação:** `" SET unsubscribed_at = NULL, confirmed_at = NULL,"` → `" SET unsubscribed_at = NULL,"`
+- **Mutação:** `"UPDATE list_addresses SET unsubscribed_at = ?"
+            " WHERE id = ? AND unsubscribed_at IS NULL",` → `"UPDATE list_addresses SET unsubscribed_at = ?"
+            " WHERE id = ?",`
 - **Estado:** `morreu`
-- **Comando:** `python3 -m pytest tests/test_lists.py -q --no-cov -k BypassConsentimento`
-- **Porque:** Repor uma inscricao volta a ser `unsubscribed_at = NULL` e mais nada. O endereco deixa de estar em `destinatarios()` quando se cancela e volta sem ninguem confirmar quando o dono da lista clica em 'Repor'. E o M-01: o produto a decidir por quem se cancelou.
+- **Comando:** `python3 -m pytest tests/test_lists.py -q --no-cov -k LinkAssinado or InvarianteCentral`
+- **Porque:** A descadencia deixa de verificar que o endereco estava subscrito. `descadenciar()` passa a devolver `True` sempre que o `id` existe, e o `address_id` enumeravel de um link re-utilizado volta a escrever um timestamp novo em cada clique. E o M-01 pela outra porta: a idempotencia e o que impede que o estado de um cancelamento seja reescrito.
+
+**A mutacao anterior desta linha foi apagada com a funcionalidade.** `repor_inscricao` deixou de existir no `T017-A` — nao ha subscricao para repor, porque nao ha confirmacao — e a mutacao que a protegia ficou sem subjecto. Esta e a substituta: a propriedade que ela protegia (o produto nao decide por quem cancelou, e um cancelamento nao e reversivel) mudou de codigo, e a prova muda com ela. Uma mutacao sem subjecto e uma mutacao que passa a nao morrer, e uma mutacao que nao morre e uma porta que ninguem sabe se esta fechada.
 - **Saída observada:**
 
 ```
-71 deselected in 0.04s
-    (1s)
+FAILED tests/test_lists.py::TestInvarianteCentral::test_descadencia_e_irreversivel_pelo_produto
+FAILED tests/test_lists.py::TestLinkAssinado::test_a_descadencia_e_idempotente
+2 failed, 8 passed, 45 deselected in 3.30s
+    (4s)
 ```
 
 ### M-22 — F-01
@@ -347,7 +359,7 @@ FAILED tests/test_lists.py::TestLinkAssinado::test_o_token_nao_abre_outro_endere
 ```
 =========================== short test summary info ============================
 FAILED tests/test_lists.py::TestLinkAssinado::test_o_token_da_lista_a_nao_verifica_na_lista_b
-1 failed, 70 deselected in 0.09s
+1 failed, 54 deselected in 0.08s
     (1s)
 ```
 
@@ -363,7 +375,7 @@ FAILED tests/test_lists.py::TestLinkAssinado::test_o_token_da_lista_a_nao_verifi
 ```
 =========================== short test summary info ============================
 FAILED tests/test_renderer.py::TestStackNaoMudouUmByte::test_o_html_do_stack_e_o_golden
-1 failed, 1 passed, 199 deselected in 0.09s
+1 failed, 1 passed, 199 deselected in 0.08s
     (1s)
 ```
 

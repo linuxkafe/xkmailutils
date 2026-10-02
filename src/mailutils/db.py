@@ -17,7 +17,7 @@ from typing import Any
 
 #: Versão do esquema. Incrementar sempre que `migrate()` acrescenta DDL, e
 #: acrescentar o bloco correspondente em `_MIGRATIONS`.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 5
 
 #: Estrutura por omissão de uma assinatura guardada.
 #:
@@ -154,11 +154,100 @@ _MIGRATIONS: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS idx_attempts_identifier ON login_attempts (identifier, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_signatures_user ON signatures (user_id)",
     "CREATE INDEX IF NOT EXISTS idx_recipient_lists_user ON recipient_lists (user_id)",
-    # O cooldown da confirmação é por endereço, em qualquer lista: espalhar o
-    # mesmo endereço por cinco listas não contorna o cooldown.
-    "CREATE INDEX IF NOT EXISTS idx_list_addresses_email ON list_addresses (email)",
+    # `idx_list_addresses_email` desapareceu com o `T017-A`: existia para o
+    # cooldown de confirmação por endereço, e sem confirmação por destinatário
+    # não há nenhuma consulta que procure um email sem ser por lista.
     "CREATE INDEX IF NOT EXISTS idx_list_addresses_list ON list_addresses (list_id)",
 )
+
+# `T017-A`: a lista deixa de confirmar destinatários e passa a ter um `from`
+# confirmado. É o `T017-A` que inverte a prova de consentimento — cada endereço
+# confirmava-se, e a partir daqui quem afirma é o operador.
+#
+# O remetente é reutilizável entre listas e confirmado uma vez. `NULL` em
+# `confirmed_at` é o portão, e é o mesmo estado para uma lista acabada de criar
+# e para uma lista que veio de uma migração: ambas não enviam.
+_MIGRATIONS = _MIGRATIONS + (
+    """
+    CREATE TABLE IF NOT EXISTS senders (
+        id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id                 INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        email                   TEXT    NOT NULL,
+        confirmation_hash       TEXT,
+        confirmation_expires_at TEXT,
+        confirmation_attempts   INTEGER NOT NULL DEFAULT 0,
+        confirmation_sent_at    TEXT,
+        confirmed_at            TEXT,
+        created_at              TEXT    NOT NULL,
+        UNIQUE (user_id, email)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_senders_user ON senders (user_id)",
+)
+
+# As colunas que a reconstrução tira de `list_addresses`. Estão aqui para o
+# guarda e para o teste lerem a mesma lista, e não duas cópias que divergem.
+_COLUNAS_DE_CONFIRMACAO = frozenset(
+    {
+        "confirmed_at",
+        "confirmation_hash",
+        "confirmation_expires_at",
+        "confirmation_attempts",
+        "confirmation_sent_at",
+    }
+)
+
+
+def _colunas_de(conn: sqlite3.Connection, table: str) -> set[str]:
+    """Nomes das colunas de uma tabela. Devolve vazio se a tabela não existir."""
+    return {linha["name"] for linha in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _reconstruir_list_addresses(conn: sqlite3.Connection) -> None:
+    """Reescreve `list_addresses` sem as colunas de confirmação do destinatário.
+
+    Não está em `_MIGRATIONS` porque a invariante de lá é uma entrada por
+    statement, e isto são sete. O `DROP TABLE` obriga a este caminho: o SQLite
+    só tira colunas a partir da 3.35, e uma versão mais antiga que o mínimo
+    declarado aqui dava erro em `ALTER TABLE ... DROP COLUMN` — num arranque, na
+    frente de um operador, com a base já meio escrita.
+
+    O guarda é a **presença da coluna antiga**, não o `user_version`: a migração
+    corre a lista toda a cada arranque, e um guarda sobre a versão passaria a
+    reconstrução uma segunda vez a partir de uma tabela já limpa.
+
+    A ordem dos passos é o que não se pode trocar: criar a tabela nova com outro
+    nome, copiar, deitar a antiga fora, renomear. Ao contrário, `DROP` primeiro
+    e o `INSERT ... SELECT` seguinte não tem de onde ler, e a lista fica vazia
+    **sem erro nenhum** — que é a forma como uma migração perde pessoas.
+    """
+    if not (_COLUNAS_DE_CONFIRMACAO & _colunas_de(conn, "list_addresses")):
+        return
+    conn.execute("DROP TABLE IF EXISTS list_addresses_novo")
+    conn.execute(
+        """
+        CREATE TABLE list_addresses_novo (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            list_id         INTEGER NOT NULL REFERENCES recipient_lists(id) ON DELETE CASCADE,
+            email           TEXT    NOT NULL,
+            name            TEXT    NOT NULL DEFAULT '',
+            unsubscribed_at TEXT,
+            created_at      TEXT    NOT NULL,
+            UNIQUE (list_id, email)
+        )
+        """
+    )
+    # A lista de colunas é explícita e não um `SELECT *`: um `SELECT *` copia
+    # também as colunas que a segunda passagem já não tem, e rebenta.
+    conn.execute(
+        "INSERT INTO list_addresses_novo (id, list_id, email, name,"
+        " unsubscribed_at, created_at)"
+        " SELECT id, list_id, email, name, unsubscribed_at, created_at"
+        " FROM list_addresses"
+    )
+    conn.execute("DROP TABLE list_addresses")
+    conn.execute("ALTER TABLE list_addresses_novo RENAME TO list_addresses")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_list_addresses_list ON list_addresses (list_id)")
 
 
 def _add_column(conn: sqlite3.Connection, table: str, column: str, declaration: str) -> None:
@@ -188,8 +277,16 @@ _INDEXES = (
     "CREATE INDEX IF NOT EXISTS idx_signatures_user ON signatures (user_id)",
 )
 
+#: As tabelas que um backup tem de levar consigo, por ordem de dependência.
+#:
+#: `senders` entrou no `T017-A` e a sua ausência aqui era um bug de backup, não
+#: de estilo: o `deploy.sh` faz `a.backup(b)` e o restauro passa por esta
+#: lista. Sem `senders`, um restauro trazia as listas — com `sender_id` a apontar
+#: para linhas que não existem — e todas ficavam sem poder enviar, sem erro
+#: nenhum e sem forma de recuperar os `from`.
 TABLE_NAMES = (
     "users",
+    "senders",
     "recipient_lists",
     "list_addresses",
     "devices",
@@ -257,6 +354,19 @@ def migrate(conn: sqlite3.Connection) -> None:
             "layout",
             f"TEXT NOT NULL DEFAULT '{DEFAULT_SIGNATURE_LAYOUT}'",
         )
+        # `T017-A`: o `from` da lista. `NULL` é o estado de "ainda não escolhido",
+        # e é também o que faz a lista não entrar num caminho de envio.
+        _add_column(
+            conn,
+            "recipient_lists",
+            "sender_id",
+            "INTEGER REFERENCES senders(id) ON DELETE RESTRICT",
+        )
+        # `NULL` = cadência automática a partir do score. Um valor aqui é um
+        # override que só pode tornar o envio mais lento, nunca mais rápido
+        # (FR-8.6) — a regra é do serviço, que é onde o score é conhecido.
+        _add_column(conn, "recipient_lists", "cadence_seconds", "INTEGER")
+        _reconstruir_list_addresses(conn)
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 

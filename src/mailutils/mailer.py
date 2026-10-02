@@ -279,6 +279,47 @@ def send_confirmation(
     send(settings, to_address, subject, text, html)
 
 
+def send_sender_confirmation(settings: Settings, to_address: str, code: str, minutes: int) -> None:
+    """Envia o código que prova que um `from` é do operador. (`T017-A`)
+
+    Este email é **para o operador**, e a diferença do `send_confirmation` não é
+    de estilo: os URLs de confirmar e descadenciar que aparecem naquele são o
+    que permitia a um destinatário sair de uma lista. Num email de remetente
+    não há lista nenhuma, e um link de descadência aqui seria um botão que
+    não faz sentido.
+
+    O corpo diz o que está a ser confirmado, porque um código de seis dígitos
+    sem contexto é um código que ninguém confirma.
+    """
+    subject, text, html = _render_sender_confirmation_email(
+        code, settings.mail_from_name, to_address, minutes
+    )
+    send(settings, to_address, subject, text, html)
+
+
+def _render_sender_confirmation_email(
+    code: str, app_name: str, to_address: str, minutes: int
+) -> tuple[str, str, str]:
+    """O corpo do email de confirmação de remetente."""
+    assunto = f"{app_name}: confirmar remetente"
+    texto = (
+        f"Confirmaste que este endereço é teu e o usas como remetente:\n\n"
+        f"    {code}\n\n"
+        f"O código vale {minutes} minutos e é de uso único. "
+        f"Não pediste isto? Não faças nada — a conta continua sem remetente "
+        f"confirmado e nenhuma lista pode enviar."
+    )
+    html = (
+        f"<p>Confirmaste que este endereço é teu e o usas como remetente:</p>"
+        f'<p style="font-size:1.5em;font-weight:bold;letter-spacing:0.2em">'
+        f"{_escape(code)}</p>"
+        f"<p>O código vale {minutes} minutos e é de uso único.</p>"
+        f"<p>Não pediste isto? Não faças nada — a conta continua sem remetente "
+        f"confirmado e nenhuma lista pode enviar.</p>"
+    )
+    return assunto, texto, html
+
+
 def send_otp(settings: Settings, to_address: str, code: str) -> None:
     subject, text, html = _render_otp_email(code, settings.mail_from_name, settings.otp_ttl_minutes)
     send(settings, to_address, subject, text, html)
@@ -291,4 +332,11 @@ def send_invite(settings: Settings, to_address: str, invite_url: str) -> None:
     send(settings, to_address, subject, text, html)
 
 
-__all__ = ["MailError", "send", "send_confirmation", "send_invite", "send_otp"]
+__all__ = [
+    "MailError",
+    "send",
+    "send_confirmation",
+    "send_invite",
+    "send_otp",
+    "send_sender_confirmation",
+]

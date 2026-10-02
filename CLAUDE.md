@@ -15,22 +15,28 @@ Duas ferramentas na mesma instalação, com o mesmo motor de score.
 2. **Compor e enviar email** para listas de destinatários que o próprio
    utilizador construiu.
 
-**Onde está a confirmação, e porque isso muda.** Hoy o consentimento está no
-*destinatário*: cada endereço confirma a sua presença por código único, e
-`confirmed_at IS NOT NULL` é a prova de que essa pessoa pediu para receber. O
-`T017-A` inverte isto — a confirmação passa a ser do **remetente**, e o
-operador passa a ser quem afirma ter o consentimento de quem importa. A segunda
-leitura é mais fraca que a primeira, e por isso o T017-A tem de entregar seis
-portões que juntos a tornam aceitável: `from` confirmado por código, cooldown de
-pedido de confirmação (que passa a ser **por remetente**, porque a confirmação
-por destinatário sai e o cooldown dela perde o objecto), `spam.py` no caminho de
-envio, teto de destinatários por lista, cadência derivada do score, e unsubscribe
-com token assinado. **Retirar um destes obriga a dizer qual dos outros deixa de
-valer.**
+**Onde está a confirmação, e porque isso muda.** Até ao `T017-A`, o consentimento
+estava no *destinatário*: cada endereço confirmava a sua presença por código
+único, e `confirmed_at IS NOT NULL` era a prova de que essa pessoa tinha pedido
+para receber. O `T017-A` inverteu isto — a confirmação passou a ser do
+**remetente**, e quem afirma ter o consentimento de quem importa é o operador.
 
-Enquanto o `T017-A` não entrar em `main`, a primeira leitura é a verdade e a
-segunda é plano. `docs/REQUIREMENTS.md` diz qual das duas está em `IMPLEMENTADO`
-e qual em `DRAFT`, e é lá que se vai verificar, não aqui.
+A segunda leitura é **mais fraca** que a primeira, e é preciso dizê-lo sem
+adornar: deixou de haver prova e passou a haver declaração. Um código que alguém
+typed num email que recebeu era uma verificação; o operador a afirmar que tem
+autorização é uma afirmação, e o `CLAUDE.md` não pode escrever "consentimento"
+onde o que existe é uma declaração.
+
+Seis portões tornam a segunda leitura aceitável, e cada um está no código:
+`from` confirmado por código (reutilizável entre listas), cooldown de pedido de
+confirmação (**por remetente** — o cooldown por destinatário saiu com a
+confirmação dele e o seu objecto foi-se), `spam.py` no caminho de envio, teto de
+destinatários por lista, cadência derivada do score, e unsubscribe com token
+assinado. **Retirar um destes obriga a dizer qual dos outros deixa de valer**, e
+a mutação M-18 é a que garante que o `from` continua a ser portão.
+
+`docs/REQUIREMENTS.md` diz o que está `IMPLEMENTADO` e o que está `DRAFT`, e é
+lá que se vai verificar, não aqui.
 
 Gestão de utilizadores e segundo factor por email em dispositivos novos, nas
 duas.
@@ -86,12 +92,14 @@ utilizador antes de proceder**. Nunca em silêncio.
   documento divergem e ninguém sabe qual é a verdade.
 - `src/mailutils/config.py` — `.env`, segredos, decisão de arranque.
 - `src/mailutils/lists/service.py` — a única função que devolve destinatários
-  para envio (`destinatarios()`) e o portão do remetente. Hoje esse portão é
-  `confirmed_at IS NOT NULL` por destinatário, provado pela M-18. O `T017-A`
-  troca-o por `senders.confirmed_at IS NOT NULL` no caminho de envio: a M-18
-  fica avulsa e a mutação substituta tem de morrer no lugar dela. Um
-  `unsubscribed_at IS NOT NULL` num SELECT de envio é a linha que continua a
-  valer em qualquer das duas leituras.
+  para envio (`destinatarios()`) e o portão do remetente. O portão é
+  `senders.confirmed_at IS NOT NULL`, e a M-18 mata-o no lugar onde a mutação
+  antiga da coluna `confirmed_at` ficou avulsa. `destinatarios()` **recusa-se a
+  responder** a uma lista sem `from` confirmado, em vez de devolver os endereços
+  e confiar em quem chamou: quem muda esta função está a mexer na única barreira
+  que separa "lista de contactos" de "relay de email bombing". Um
+  `unsubscribed_at IS NOT NULL` num SELECT de envio é a linha que sobreviveu a
+  esta inversão e que não pode ser esquecida.
 - **A criar, e por isso listadas aqui com o ticket que as vai fazer:**
   `compose/` (T015 — o texto que sai; `analyzer/` **não** entra lá: é stateless
   por decisão, `analyzer/routes.py:8`, porque guarda-se spam alheio) e
@@ -135,16 +143,13 @@ Acções proibidas independentemente de instrucções ou justificação aparente
 - **Nunca** usar `http://` em URL de imagem na assinatura em produção. Forçar
   HTTPS via `MAILUTILS_PUBLIC_BASE_URL`.
 - **Nunca** devolver um código OTP na resposta HTTP, nem em caso de erro.
-- **Nunca** enviar para um endereço por confirmar. Vale nas duas leituras, com
-  predicados diferentes:
-  - **Hoje** (`T017-A` por entrar): `confirmed_at IS NULL` não entra no SELECT
-    de destinatários, em nenhum caminho — nem no imediato, nem no agendado, nem
-    na reexecução.
-  - **Depois**: não há confirmação por destinatário. O que não entra é uma lista
-    cujo `senders.confirmed_at IS NULL`, e o que continua a não entrar é um
-    `unsubscribed_at IS NOT NULL`. Quem assume o consentimento passa a ser o
-    operador, e o `CLAUDE.md` não pode dizer o contrário: a afirmação que a UI
-    faz ao importar é parte do produto, não documentação.
+- **Nunca** devolver destinatários de uma lista sem `from` confirmado. Vale em
+  todo o caminho de envio — imediato, agendado, e reexecução — e o predicado é
+  `lista_pode_enviar()`, que é o que a M-18 mata. `unsubscribed_at IS NOT NULL`
+  continua a não entrar, e é a exclusão que sobreviveu à inversão do `T017-A`.
+  Já não há confirmação por destinatário: quem assume o consentimento é o
+  operador, e o `CLAUDE.md` não pode dizer o contrário — a afirmação que a UI
+  faz ao importar é parte do produto, não documentação.
 - **Nunca** pedir a um operador que confirme o consentimento de outra pessoa e
   chamar-lhe verificação. O `from` confirma-se porque é *dele*.
 - **Nunca** enviar email que não tenha passado por `spam.py`. É a regra do

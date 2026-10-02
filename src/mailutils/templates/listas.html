@@ -33,15 +33,23 @@
   <table class="tabela">
     <caption class="visually-hidden">Listas de destinatários e contagens</caption>
     <thead>
-      <tr><th scope="col">Lista</th><th scope="col">Confirmados</th>
-      <th scope="col">Por confirmar</th><th scope="col">Total</th></tr>
+      <tr><th scope="col">Lista</th><th scope="col">Remetente</th>
+        <th scope="col">Activos</th><th scope="col">Total</th></tr>
     </thead>
     <tbody>
       {% for l in listas %}
       <tr>
         <th scope="row"><a href="{{ raiz }}/listas/{{ l.id }}">{{ l.name }}</a></th>
+        <td>
+          {% if l.sem_from %}
+            <span class="etiqueta etiqueta--warn">sem remetente</span>
+          {% elif l.from_confirmado %}
+            <span class="etiqueta etiqueta--ok">confirmado</span>
+          {% else %}
+            <span class="etiqueta etiqueta--warn">por confirmar</span>
+          {% endif %}
+        </td>
         <td>{{ l.confirmados }}</td>
-        <td>{{ l.pendentes }}</td>
         <td>{{ l.total }}</td>
       </tr>
       {% endfor %}
@@ -53,7 +61,8 @@
 {% endif %}
 
 <p class="muted small">
-  Teto de {{ teto }} endereços por lista. {{ pendentes }} confirmações
-  pendentes, com um teto de {{ teto_pendentes }}.
+  Teto de {{ teto }} endereços por lista.
+  {% if bloqueadas %}{{ bloqueadas }} lista(s) sem remetente confirmado, e por isso
+  sem poder enviar.{% endif %}
 </p>
 {% endblock %}
