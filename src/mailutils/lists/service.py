@@ -40,7 +40,7 @@ from ..db import transaction
 #: o ficheiro a 2 MiB e 2 MiB de emails dão ~50 mil linhas — acima do que uma
 #: lista de pessoa aceita, e o `max_list_size` pararia no meio. Cortar aqui
 #: evita trinta segundos de parse para depois deitar tudo fora.
-MAX_CSV_ROWS = 20000  # validacao
+MAX_CSV_ROWS = 20000
 
 #: Tentativas de confirmar um código antes de se pedir outro. Mesmo número que
 #: o segundo factor de login (FR-2.4): seis dígitos são 10^6 combinações, e um
