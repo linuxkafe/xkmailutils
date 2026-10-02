@@ -225,6 +225,55 @@ class TestBackends:
         mailer.send_invite(configured, "ana@exemplo.pt", "https://x.pt/convite/abc")
         assert "72 horas" in capsys.readouterr().out
 
+    def test_confirmation_email_carries_both_links(
+        self, settings: config.Settings, capsys: pytest.CaptureFixture
+    ) -> None:
+        """Chama a função **real**, não um stub.
+
+        O teste antigo de listas faz `monkeypatch.setattr(mailer,
+        "send_confirmation", fake)` — substitui a função por um objecto com a
+        assinatura certa e o mismatch fica invisível. Este é o 500 que chegou
+        a produção: o caller passou seis argumentos e a função levava quatro.
+
+        A lição que este teste codifica: uma função cuja assinatura muda tem de
+        ter um teste que a chame sem a substituir. O monkeypatch é válido para
+        testar o que o *caller* faz; não é válido para testar a função em si.
+        """
+        configured = config.Settings(**{**settings.__dict__, "mail_backend": "console"})
+        mailer.send_confirmation(
+            configured,
+            "ana@exemplo.pt",
+            "123456",
+            "Newsletter",
+            "https://x.pt/listas/1/confirmar/42?c=abc",
+            "https://x.pt/listas/1/descadenciar/42?d=xyz",
+        )
+        out = capsys.readouterr().out
+        assert "123456" in out
+        assert "Newsletter" in out
+        assert "https://x.pt/listas/1/confirmar/42?c=abc" in out
+        assert "https://x.pt/listas/1/descadenciar/42?d=xyz" in out
+
+    def test_confirmation_signature_matches_the_render(self) -> None:
+        """A função pública e a privada têm de bater nos argumentos que importa.
+
+        `_render_confirmation_email` usa os dois URLs para construir o HTML. Se
+        `send_confirmation` deixasse de os aceitar, o email saía sem os links
+        e ninguém sabia — o teste de cima apanharia o `TypeError`, mas se
+        alguém trocasse a assinatura sem mudar o número de argumentos, só este
+        diz que o render espera o que a função não passa.
+        """
+        import inspect
+
+        render = inspect.signature(mailer._render_confirmation_email)
+        public = inspect.signature(mailer.send_confirmation)
+        # O render recebe: code, app_name, list_name, minutes, confirmar_url, descadenciar_url
+        assert "confirmar_url" in render.parameters
+        assert "descadenciar_url" in render.parameters
+        # A função pública tem de aceitar os dois para os conseguir passar
+        assert "confirmar_url" in public.parameters
+        assert "descadenciar_url" in public.parameters
+
 
 class TestImageSniffing:
     @pytest.mark.parametrize(

@@ -248,15 +248,33 @@ def _render_confirmation_email(
     return subject, text, html
 
 
-def send_confirmation(settings: Settings, to_address: str, code: str, list_name: str) -> None:
+def send_confirmation(
+    settings: Settings,
+    to_address: str,
+    code: str,
+    list_name: str,
+    confirmar_url: str,
+    descadenciar_url: str,
+) -> None:
     """Envia o código de confirmação de um endereço.
 
     Sai por `send`, como tudo o resto, e por isso o corpo nunca passa por
     `logging`: um código de confirmação num log é um código que autoriza a
     inscrição de um endereço que ninguém pediu para inscrever.
+
+    Os dois URLs são o que torna o email usável: o `confirmar_url` é o link
+    de um clique, e o `descadenciar_url` é o que torna a saída trivial. Sem
+    eles, o destinatário tem de recitar um código de um ecrã para outro, e
+    um formulário atrás de sessão que a destinatária não tem não é um
+    caminho — é um beco. (B-02, revisão T014.)
     """
     subject, text, html = _render_confirmation_email(
-        code, settings.mail_from_name, list_name, settings.otp_ttl_minutes
+        code,
+        settings.mail_from_name,
+        list_name,
+        settings.otp_ttl_minutes,
+        confirmar_url,
+        descadenciar_url,
     )
     send(settings, to_address, subject, text, html)
 
