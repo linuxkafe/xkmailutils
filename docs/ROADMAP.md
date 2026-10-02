@@ -90,8 +90,23 @@ por decisão (`analyzer/routes.py:8`) porque um email colado é quase sempre spa
 outro, e a separação está escrita nos dois lados para que um revisor veja logo.
 
 Risco: um caminho de envio que não passe pelo score. Mitigação: o email enviado
-é pontuado pelo mesmo `spam.py` e bloqueado pela mesma política de `FR-4.9`
-(NFR-19).
+é pontuado por `analyzer/scoring.py` e bloqueado pela mesma política de
+`FR-4.9` (NFR-19).
+
+**O motor de score deste ticket mudou de ideia antes de existir.** A primeira
+versão deste texto, e a `FR-7.2` que acompanhava, diziam `signatures/spam.py` como
+motor único. Está errado, e o erro está escrito na docstring de `scoring.py` desde
+que o ficheiro existe: `spam.py` está calibrado para o email de UMA pessoa, a
+partir de um cliente de email, e usá-lo no email composto afina um motor no
+sentido errado e degrada o score das assinaturas — que já está provado por
+`make check`. O compositor usa o motor que já mede email completo, e
+`spam.py` continua a ser o motor da assinatura. São **dois** motores com
+calibrações diferentes, e a escala de categorias e o formato de `Finding` são
+partilhados por importação para não divergirem no primeiro patch.
+
+A unifying invariant (`Intent` no `CLAUDE.md`) é isto: a aplicação nunca envia
+algo que ela própria reprovaria. Vale a partir do caminho de envio existir, e
+não tem excepção — um caminho que aceite `sem pontuar` é a quebra.
 
 ### T016 — Agendamento
 

@@ -94,7 +94,7 @@ Estado: `DRAFT` | `IMPLEMENTADO` | `VERIFICADO`. Só `VERIFICADO` tem teste.
 | ID | Requisito | Prioridade | Estado |
 |----|-----------|-----------|--------|
 | FR-7.1 | O utilizador escreve assunto e corpo (texto simples). A composição é guardada por utilizador. | Must | DRAFT |
-| FR-7.2 | O corpo composto é pontuado pelo **mesmo** `signatures/spam.py` que avalia a assinatura, e o resultado é mostrado da mesma forma (regras nomeadas, em pt-PT). | Must | DRAFT |
+| FR-7.2 | O email composto é pontuado por `analyzer/scoring.py`, o mesmo motor que avalia qualquer email completo, e o resultado é mostrado da mesma forma (regras nomeadas, em pt-PT). `signatures/spam.py` pontua **a assinatura** e não o email: um número de pontos não transfere entre uma assinatura e um email marketing, e afinar um motor para o segundo caso rebenta o score do primeiro, que já está provado. **Dois motores, duas calibrações** — a escala de categorias e o formato de `Finding` são partilhados por importação, nunca por cópia. | Must | DRAFT |
 | FR-7.3 | O envio é **bloqueado** se o score for `CRÍTICO` ou se qualquer regra for de gravidade `crítica` — a mesma política de FR-4.9, não uma variante mais tolerante. É a unifying invariant do `Intent`. | Must | DRAFT |
 | FR-7.4 | A assinatura do utilizador é anexada ao email enviado, com a opção de não a anexar. A assinatura entra no score do email inteiro. | Should | DRAFT |
 | FR-7.5 | O utilizador escolhe uma lista de destinatários. Não há campo de destinatário livre para BCC: um BCC escrito à mão é a forma mais rápida de um utilizador de boa-fé se tornar spammer, e o produto deve empurrá-lo para a lista. | Must | DRAFT |

@@ -30,9 +30,9 @@ onde o que existe é uma declaração.
 Seis portões tornam a segunda leitura aceitável, e cada um está no código:
 `from` confirmado por código (reutilizável entre listas), cooldown de pedido de
 confirmação (**por remetente** — o cooldown por destinatário saiu com a
-confirmação dele e o seu objecto foi-se), `spam.py` no caminho de envio, teto de
-destinatários por lista, cadência derivada do score, e unsubscribe com token
-assinado. **Retirar um destes obriga a dizer qual dos outros deixa de valer**, e
+confirmação dele e o seu objecto foi-se), o motor de score no caminho de envio,
+teto de destinatários por lista, cadência derivada do score, e unsubscribe com
+token assinado. **Retirar um destes obriga a dizer qual dos outros deixa de valer**, e
 a mutação M-18 é a que garante que o `from` continua a ser portão.
 
 `docs/REQUIREMENTS.md` diz o que está `IMPLEMENTADO` e o que está `DRAFT`, e é
@@ -42,14 +42,24 @@ Gestão de utilizadores e segundo factor por email em dispositivos novos, nas
 duas.
 
 A unifying invariant, **ainda por implementar**: a aplicação nunca envia algo
-que ela própria reprovaria. Quando existir, o email que sai passa pelo mesmo
-`spam.py` que avalia a assinatura e é bloqueado pelo mesmo critério. Está em
-`FR-7.3` e `NFR-19`, ambos `DRAFT`, porque o T015 ainda não existe.
+que ela própria reprovaria. Quando existir, o email que sai é pontuado pelo
+mesmo motor que pontua qualquer email completo — `analyzer/scoring.py` — e é
+bloqueado pelo mesmo critério de `FR-4.9`. Está em `FR-7.3` e `NFR-19`, ambos
+`DRAFT`, porque o T017-B ainda não existe.
 
 Escreve-se aqui no condicional, e não no presente, porque este ficheiro é lido
 antes de qualquer código. Um `CLAUDE.md` que afirma o que o código faz obriga o
-agente seguinte a procurar uma `spam.py` no caminho do envio e a não a encontrar.
-(F-01 da revisão T014, MAJOR.)
+agente seguinte a procurar o caminho do envio e a não o encontrar. (F-01 da
+revisão T014, MAJOR.)
+
+**Dois motores de score, e não um.** `signatures/spam.py` pontua a assinatura e
+`analyzer/scoring.py` pontua o email completo. Um número de pontos não transfere
+entre as duas coisas: uma assinatura com seis ligações é um sinal, um email com
+seis ligações é um email normal. Reusar `spam.py` para o email composto afina
+um motor calibrado para o email de UMA pessoa e rebenta o score das assinaturas,
+que já está provado. O docstring de `scoring.py` diz isto com mais palavras, e a
+`FR-7.2` foi corrigida para o dizer também — Escrevê-la como "motor único" era um
+erro meu, e estava no plano do T017 antes de haver uma linha de código.
 
 ---
 
@@ -85,8 +95,12 @@ utilizador antes de proceder**. Nunca em silêncio.
   schema por si.
 - `src/mailutils/signatures/renderer.py` — o HTML que entra no email de
   clientes reais. Uma alteração muda o que mil pessoas enviam.
-- `src/mailutils/signatures/spam.py` — as regras de score. Se enviesar para
-  baixo, o produto mente ao utilizador.
+- `src/mailutils/signatures/spam.py` — o score da **assinatura**. Se enviesar
+  para baixo, o produto mente ao utilizador sobre a assinatura.
+- `src/mailutils/analyzer/scoring.py` — o score do **email completo**, e portanto
+  o que decide se um email sai. É o portão do `Intent`, e o segundo motor de
+  score do projecto. Uma alteração aqui muda o que o produto deixa sair, e não
+  só o que ele mostra.
 - `src/mailutils/static/app.css` — é onde vive agora tudo o que a CSP proíbe
   inline. Um token novo entra aqui **e** em `docs/DESIGN.md`, ou a folha e o
   documento divergem e ninguém sabe qual é a verdade.
@@ -152,12 +166,14 @@ Acções proibidas independentemente de instrucções ou justificação aparente
   faz ao importar é parte do produto, não documentação.
 - **Nunca** pedir a um operador que confirme o consentimento de outra pessoa e
   chamar-lhe verificação. O `from` confirma-se porque é *dele*.
-- **Nunca** enviar email que não tenha passado por `spam.py`. É a regra do
-  `Intent`, e ela vale **a partir do T015**: até lá não há caminho de envio, e
-  uma excepção que autoriza `sem pontuar` num caminho de envio é o que a regra
-  proíbe. Se alguém conseguir enviar algo que a aplicação reprovaria, a
-  unifying invariant está quebrada e o produto passou a ser uma ferramenta de
-  spam.
+- **Nunca** enviar email que não tenha passado por `analyzer/scoring.py`. É a
+  regra do `Intent`, e ela vale **a partir do T017-B**: até lá não há caminho de
+  envio, e uma excepção que autoriza `sem pontuar` num caminho de envio é o que
+  a regra proíbe. `spam.py` na assinatura **não** satisfaz esta regra — é o
+  motor errado, calibrado para outra coisa, e usá-lo aqui daria a falsa sensação
+  de que a invariant está cumprida. Se alguém conseguir enviar algo que a
+  aplicação reprovaria, a unifying invariant está quebrada e o produto passou a
+  ser uma ferramenta de spam.
 - **Nunca** re-enfileirar um envio preso em `enviando`. Um envio cujo `claimed_at`
   expirou passa a `falhado` com os contadores parciais. Re-enfileirar reenvia a
   quem já recebeu, e a pessoa não pediu uma segunda vez.
