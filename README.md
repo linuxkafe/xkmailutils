@@ -84,6 +84,78 @@ make verify TICKET=T001   # lê os critérios do ticket; NÃO é um gate
 make doctor    # estado do ambiente
 ```
 
+## Actualizar
+
+**Um comando. A base de dados não é tocada.**
+
+```bash
+cd /opt/xkmailutils && sudo ./deploy.sh --actualizar
+```
+
+Ou, à mão, o mesmo em duas partes:
+
+```bash
+cd /opt/xkmailutils
+git pull && docker compose up -d --build
+```
+
+### O que este comando **não** faz, e como se sabe
+
+Não apaga a base de dados. Isto não é uma promessa do README — foi medido com
+um contentor real:
+
+| | volume `dados` | base |
+|---|---|---|
+| `docker compose up -d --build` | intacto | intacta |
+| `docker compose down` | intacto | intacta |
+| `docker compose down -v` | **removido** | **perdida** |
+
+O único comando que apaga é o `down -v`, e a diferença entre ele e o `down` é o
+`-v`. A base vive num volume nomeado (`dados:/data`) e não dentro da imagem,
+por isso `up --build` cria um contentor novo com o mesmo volume. E o esquema é
+migrado no arranque, sem reescrever o que lá está — uma base com utilizadores e
+assinaturas da versão anterior passa para esta com as mesmas linhas.
+
+`tests/test_atualizacao.py` fixa as condições sem as quais isto deixa de ser
+verdade, porque um `deploy.sh` é um ficheiro de texto até alguém o mudar.
+
+### Antes de actualizar
+
+`--actualizar` tira uma cópia de segurança antes de mexer em seja o que for, e
+**aborta se ela falhar**. A cópia usa `sqlite3.Connection.backup()` e não `cp`:
+a base está em modo WAL, e um `cp` a meio de uma escrita copia a base e o WAL
+para sítios diferentes — a cópia resultante não abre, ou abre com transacções
+a menos.
+
+Para guardar a cópia **fora** do contentor:
+
+```bash
+docker compose -C /opt/xkmailutils cp mailutils:/data/copia.db   ./copia-$(date +%F).db
+```
+
+### Se algo correr mal
+
+O `deploy.sh --actualizar` usa `git pull --ff-only`. Se der conflito — porque
+alguém editou um ficheiro versionado dentro do directório de instalação — nada
+é reconstruído e a aplicação **continua na versão anterior, a servir**. É o
+comportamento certo: um deploy a meio é pior do que nenhum deploy.
+
+Para voltar atrás:
+
+```bash
+git -C /opt/xkmailutils checkout <ramo-anterior>
+cd /opt/xkmailutils && sudo ./deploy.sh --actualizar
+```
+
+O esquema só anda para a frente. Uma migração que se verifica para trás
+precisa de ser feita à mão, e o ficheiro `aes/tickets/` diz qual foi a versão.
+
+### Uma coisa que este `docker-compose.yml` não permite
+
+`container_name` está fixo em `xkmailutils`, o que quer dizer **uma só
+instância por máquina**. Não é limitação do contentor; é limitação do ficheiro,
+e está aqui escrita para não se descobrir a meio de um teste.
+
 ## Como se usa
 
 1. **Entrar.** Num dispositivo conhecido, a palavra-passe basta. Num
