@@ -468,6 +468,72 @@ def test_a_actualizacao_avisa_que_a_base_sobrevive(deploy: str) -> None:
     assert "COPIA DE SEGURANCA" in bloco, "o bloco não menciona a cópia de segurança"
 
 
+class TestASondaDeRedeNaoBloqueiaUmDeployBom:
+    """A sonda de rede é um filtro de conveniência, não um portão.
+
+    Duas lições de um teste só, ambas com o mesmo sabor: uma verificação que
+    falha tem de ser mais barata de explicar do que a coisa que verifica.
+
+    1. Mediu a rede errada — `compose run` liga à rede do projecto, e o build
+       usa a bridge por defeito. Deu "tem rede" num servidor cujo `pip install`
+       não tinha. Verde a mais é pior que vermelho.
+    2. Quando a imagem não se resolve, respondia "sem rede". O `compose config`
+       falha quando falta o `.env`, e bloqueava uma actualização correcta com
+       um diagnóstico inventado.
+    """
+
+    @staticmethod
+    def _corpo() -> str:
+        """O corpo da sonda, **sem comentários**.
+
+        `compose run` e `alpine` aparecem no texto que explica porquê não se
+        usam. Um teste que lê a explicação como se fosse código falha por
+        estar a ser bem escrito — e foi o que aconteceu à primeira vez.
+        """
+        bruto = (RAIZ / "deploy.sh").read_text(encoding="utf-8")
+        i = bruto.index("tem_rede_dentro_de_um_contentor()")
+        corpo = bruto[i : bruto.index("\n}\n", i)]
+        sem_comentarios = [x for x in corpo.splitlines() if not x.strip().startswith("#")]
+        return "\n".join(sem_comentarios)
+
+    def test_a_sonda_usa_a_bridge_e_nao_a_rede_do_projecto(self) -> None:
+        funcao = self._corpo()
+        assert "--network bridge" in funcao, (
+            "a sonda tem de medir a rede que o build usa — a bridge por defeito — "
+            "e não a rede do projecto, que é outra"
+        )
+        assert "compose run" not in funcao, (
+            "`compose run` liga à rede do projecto e dava verde num servidor "
+            "onde o build não tinha rede"
+        )
+
+    def test_a_sonda_nao_puxa_uma_imagem(self) -> None:
+        """Um `docker pull` durante o teste mascara o próprio teste."""
+        funcao = self._corpo()
+        assert "alpine" not in funcao, (
+            "a sonda não deve puxar uma imagem nova: se a bridge não tem rede, "
+            "o pull falha por outra razão e o diagnóstico passa a mentir"
+        )
+
+    def test_a_sonda_falha_aberta_quando_nao_sabe(self) -> None:
+        """Não pode bloquear uma actualização correcta com um motivo inventado.
+
+        Este é o mais importante dos três. Um `return 1` quando a imagem não
+        se resolve traduzia-se em "o host tem rede, mas um contentor não" —
+        num servidor que tinha rede, porque o `compose config` falha sem o
+        `.env`.
+        """
+        funcao = self._corpo()
+        assert "return 0" in funcao, (
+            "quando a sonda não consegue determinar a rede tem de assumir que "
+            "a rede está bem e deixar o build tentar"
+        )
+        assert '[ -z "$imagem" ] || return 1' not in funcao, (
+            "a sonda devolve 'sem rede' quando não consegue resolver a imagem: "
+            "isso bloqueia um deploy bom com um diagnóstico inventado"
+        )
+
+
 class TestOComposeCompativelComAVersao:
     """O `-C` do `docker compose` não existe. Este é um bug que aconteceu.
 

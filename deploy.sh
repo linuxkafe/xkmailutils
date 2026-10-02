@@ -62,7 +62,29 @@ tem_rede_no_host() {
 }
 
 tem_rede_dentro_de_um_contentor() {
-    timeout 30 $compose run --rm --no-deps --entrypoint python3 mailutils -c \
+    # Duas coisas que a primeira versao fez mal.
+    #
+    # `--network bridge`, e nao `compose run`: o build usa a bridge por
+    # defeito e o `compose run` liga a rede do projecto. Sao redes diferentes,
+    # e testar a errada dava "tem rede" num servidor onde o `pip install` nao
+    # tinha. Verde a mais e pior que vermelho.
+    #
+    # A imagem e a do projecto, resolvida do compose. Nao se usa `alpine`: se a
+    # bridge nao tem rede, o `docker pull` do alpine acontece pela rede do
+    # host e falha depois, e o teste que devia dizer "nao ha rede" passa a
+    # falhar por uma razao diferente. A imagem do projecto ja esta no disco.
+    # Se a imagem nao se resolve, assume-se que ha rede e deixa-se o build
+    # tentar. Uma sonda que bloqueia uma actualizacao correcta porque nao
+    # consegue responder e pior do que nao ter sonda: o `compose config`
+    # falha quando falta o `.env`, e nessa altura o aviso seria "sem rede"
+    # num servidor que tem rede. Falha aberta, sempre.
+    local imagem
+    imagem=$($compose config --images 2>/dev/null | head -1)
+    [ -n "$imagem" ] || imagem="$compose images -q mailutils 2>/dev/null | head -1"
+    if [ -z "$imagem" ]; then
+        return 0
+    fi
+    timeout 30 docker run --rm --network bridge --entrypoint python3 "$imagem" -c \
         'import socket
 try:
     socket.create_connection(("pypi.org", 443), timeout=8).close()
