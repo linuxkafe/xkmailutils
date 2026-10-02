@@ -67,6 +67,35 @@
 - **Sucesso medido:** o envio do mês é um rascunho, um score, e um agendamento.
   Zero BCC. Zero surpresas de quem recebeu.
 
+### A persona 4 foi falsificada pelo dono (2026-10-02)
+
+A nota de honestidade epistémica acima previa que *"se a pessoa real for outra,
+esta persona está errada e as FR-6/7/8 estão dimensionadas para o caso
+errado"*. O dono respondeu, e o caso real **não** é este.
+
+A necessidade central escrita aqui — *"ter a certeza de que quem não confirmou
+não recebe"* e *"não tem um sítio onde o destinatário diga quero receber isto"* —
+é o oposto do que foi pedido: importar listas que já existem e **assumir** o
+consentimento, com o `from` confirmado a ser o único código que se pede.
+
+Isto vale por três razões:
+
+1. **É a primeira falsificação desta persona por algo que não foi um palpite de
+   agente.** Até aqui era uma hipótese; agora é uma hipótese refutada. A nota
+   continua válida e a persona continua marcada como hipótese — não a
+   reescrevo para lhe dar a razão, que era precisamente o modo de a tornar
+   inútil.
+2. **A frustração central estava errada, não a solução.** O que o dono tem é
+   uma lista onde já tem os endereços, e o que lhe falta é poder *enviar* sem
+   montar uma máquina de consentimento para cada importação. Isto move a
+   Persona 4 de *"precisa de recolher consentimento"* para *"precisa de enviar e
+   de poder sair"*.
+3. **O custo é real e está escrito.** Perder a prova de consentimento verificada
+   é perder a propriedade mais forte que o produto tinha. É a decisão do dono,
+   com o custo nomeado no `CLAUDE.md` e em `REQUIREMENTS.md` FR-6.2/6.9, e com
+   os seis portões que a substituem. Não é uma improvement neutra e não é
+   descrita como se fosse.
+
 ## Fora do âmbito como personas
 
 Consumidores finais, quem quer uma ferramenta de marketing com segmentos e

@@ -75,6 +75,13 @@ Risco: um utilizador com sessão usa a confirmação como relay de email bombing
 Mitigação: cooldown por endereço, teto de pendentes por utilizador, teto de
 destinatários por lista. São configuração, não constantes (NFR-18).
 
+**Isto descreve como a lista nasceu, e o `T017-A` substitui o modelo de
+confiança sem desfazer o que o T014 fez.** A mutação `M-18` continua a ser
+verdade sobre o código actual, mas passa a ficar avulsa quando o filtro
+desaparecer, e a mutação substituta passa a ser sobre o portão do remetente
+(`senders.confirmed_at IS NOT NULL`). Ver `docs/REQUIREMENTS.md` FR-6.2 e
+FR-6.9, que dizem as duas leituras lado a lado para que ninguém as confunda.
+
 ### T015 — Compositor e envio
 
 `compose/` como **irmão** de `analyzer/`, não extensão. O `analyzer` é stateless
@@ -118,6 +125,7 @@ Registradas para que ninguém as trate como erro:
 | 2026-10-02 | `ROADMAP.md`: "Envio de newsletters — isto é um gerador de assinaturas, não um serviço de email" (fora do escopo, decidido) | No backlog como T014–T016. Decisão do dono. |
 | 2026-10-02 | `CLAUDE.md` Non-Goals: "Não é um cliente de email. Não envia." | Envia, para listas com confirmação por código único. |
 | 2026-10-02 | `REQUIREMENTS.md`: "SMTP próprio" fora do âmbito | O SMTP já configurado é o transporte. Sem SMTP próprio, sem fila. |
+| 2026-10-02 | `REQUIREMENTS.md` FR-6.2: cada endereço confirma por código, e `confirmed_at IS NOT NULL` é a prova de consentimento | *(T017-A, DRAFT)* Sem confirmação por destinatário. O `from` é que se confirma, e o operador afirma ter o consentimento de quem importa. **Isto enfraquece a prova** — o consentimento passa de prova verificada a afirmação — e por isso vem com os seis portões listados no `CLAUDE.md`. |
 
 O que **não** foi revertido: zero dependências novas, e a assinatura continua
 sujeita às mesmas regras de score.

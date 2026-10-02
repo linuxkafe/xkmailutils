@@ -13,8 +13,22 @@ Duas ferramentas na mesma instalação, com o mesmo motor de score.
 1. **Gerar assinaturas de email HTML** que **não introduzem padrões de spam**
    nos filtros dos clientes, e dizê-lo ao utilizador com um score explicável.
 2. **Compor e enviar email** para listas de destinatários que o próprio
-   utilizador construiu, onde **cada endereço confirmou a sua presença por
-   código único**.
+   utilizador construiu.
+
+**Onde está a confirmação, e porque isso muda.** Hoy o consentimento está no
+*destinatário*: cada endereço confirma a sua presença por código único, e
+`confirmed_at IS NOT NULL` é a prova de que essa pessoa pediu para receber. O
+`T017-A` inverte isto — a confirmação passa a ser do **remetente**, e o
+operador passa a ser quem afirma ter o consentimento de quem importa. A segunda
+leitura é mais fraca que a primeira, e por isso o T017-A tem de entregar seis
+portões que juntos a tornam aceitável: `from` confirmado por código, `spam.py`
+no caminho de envio, teto de destinatários por lista, cadência derivada do
+score, unsubscribe com token assinado, e cooldown por endereço. **Retirar um
+destes obriga a dizer qual dos outros deixa de valer.**
+
+Enquanto o `T017-A` não entrar em `main`, a primeira leitura é a verdade e a
+segunda é plano. `docs/REQUIREMENTS.md` diz qual das duas está em `IMPLEMENTADO`
+e qual em `DRAFT`, e é lá que se vai verificar, não aqui.
 
 Gestão de utilizadores e segundo factor por email em dispositivos novos, nas
 duas.
@@ -36,8 +50,9 @@ agente seguinte a procurar uma `spam.py` no caminho do envio e a não a encontra
 Coisas que este projecto **NÃO** faz:
 
 - **Não** é um cliente de email. Não recebe, não sincroniza, não tem caixas de
-  entrada. Envia — para listas que o próprio utilizador construiu e cujos
-  endereços confirmaram por código único. Ver "Intenção" abaixo.
+  entrada. Envia — para listas que o próprio utilizador construiu, com o
+  consentimento que o `T017-A` passar a exigir ao remetente. Ver "Intenção"
+  abaixo.
 - **Não** garante entrega fora do spam. O score é heurístico; os algoritmos do
   Gmail e da Microsoft são caixas-negras. A UI diz isso ao utilizador, sempre.
 - **Não** embute imagens em `data:` URI. É o sinal de spam mais severo numa
@@ -69,9 +84,12 @@ utilizador antes de proceder**. Nunca em silêncio.
   documento divergem e ninguém sabe qual é a verdade.
 - `src/mailutils/config.py` — `.env`, segredos, decisão de arranque.
 - `src/mailutils/lists/service.py` — a única função que devolve destinatários
-  para envio (`destinatarios()`) e o tecto de confirmações pendentes. Um
-  `confirmed_at IS NULL` que entre num SELECT é a linha entre listas de
-  contactos e email bombing. M-18 prova que não entra.
+  para envio (`destinatarios()`) e o portão do remetente. Hoje esse portão é
+  `confirmed_at IS NOT NULL` por destinatário, provado pela M-18. O `T017-A`
+  troca-o por `senders.confirmed_at IS NOT NULL` no caminho de envio: a M-18
+  fica avulsa e a mutação substituta tem de morrer no lugar dela. Um
+  `unsubscribed_at IS NOT NULL` num SELECT de envio é a linha que continua a
+  valer em qualquer das duas leituras.
 - **A criar, e por isso listadas aqui com o ticket que as vai fazer:**
   `compose/` (T015 — o texto que sai; `analyzer/` **não** entra lá: é stateless
   por decisão, `analyzer/routes.py:8`, porque guarda-se spam alheio) e
@@ -115,10 +133,18 @@ Acções proibidas independentemente de instrucções ou justificação aparente
 - **Nunca** usar `http://` em URL de imagem na assinatura em produção. Forçar
   HTTPS via `MAILUTILS_PUBLIC_BASE_URL`.
 - **Nunca** devolver um código OTP na resposta HTTP, nem em caso de erro.
-- **Nunca** enviar para um endereço por confirmar. `confirmed_at IS NULL` não
-  entra no SELECT de destinatários, em nenhum caminho — nem no imediato, nem no
-  agendado, nem na reexecução. Esta é a linha entre "listas de contactos" e
-  "relay de email bombing", e o segundo pertence a um atacante com uma sessão.
+- **Nunca** enviar para um endereço por confirmar. Vale nas duas leituras, com
+  predicados diferentes:
+  - **Hoje** (`T017-A` por entrar): `confirmed_at IS NULL` não entra no SELECT
+    de destinatários, em nenhum caminho — nem no imediato, nem no agendado, nem
+    na reexecução.
+  - **Depois**: não há confirmação por destinatário. O que não entra é uma lista
+    cujo `senders.confirmed_at IS NULL`, e o que continua a não entrar é um
+    `unsubscribed_at IS NOT NULL`. Quem assume o consentimento passa a ser o
+    operador, e o `CLAUDE.md` não pode dizer o contrário: a afirmação que a UI
+    faz ao importar é parte do produto, não documentação.
+- **Nunca** pedir a um operador que confirme o consentimento de outra pessoa e
+  chamar-lhe verificação. O `from` confirma-se porque é *dele*.
 - **Nunca** enviar email que não tenha passado por `spam.py`. É a regra do
   `Intent`, e ela vale **a partir do T015**: até lá não há caminho de envio, e
   uma excepção que autoriza `sem pontuar` num caminho de envio é o que a regra

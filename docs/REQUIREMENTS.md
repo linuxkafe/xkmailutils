@@ -78,13 +78,16 @@ Estado: `DRAFT` | `IMPLEMENTADO` | `VERIFICADO`. Só `VERIFICADO` tem teste.
 | ID | Requisito | Prioridade | Estado |
 |----|-----------|-----------|--------|
 | FR-6.1 | O utilizador cria listas nomeadas. Uma lista pertence a um utilizador e é eliminada com ele. | Must | IMPLEMENTADO |
-| FR-6.2 | Um endereço é adicionado **sempre por confirmar**. Recebe um código de uso único; só entra no `SELECT` de destinatários depois de `confirmed_at IS NOT NULL`. | Must | IMPLEMENTADO |
-| FR-6.3 | O código de confirmação reusa as primitivas de `security.py` (mesmo alfabeto, mesmo `scrypt`, mesmo cooldown) mas **não** a tabela `otp_codes`: essa é `user_id NOT NULL` e ligada a dispositivo. Fica em `list_addresses`, indexada por endereço. | Must | IMPLEMENTADO |
+| FR-6.2 | **Duas leituras, e só uma está implementada.** *Hoje*: um endereço é adicionado sempre por confirmar, recebe um código de uso único, e só entra no `SELECT` de destinatários depois de `confirmed_at IS NOT NULL`. *Depois do `T017-A`*: não há confirmação por destinatário — o operador afirma ter o consentimento de quem importa, e o portão passa a ser o remetente (`FR-6.9`). | Must | IMPLEMENTADO (leitura de hoje) / DRAFT (leitura do T017-A) |
+| FR-6.3 | O código de confirmação reusa as primitivas de `security.py` (mesmo alfabeto, mesmo `scrypt`, mesmo cooldown) mas **não** a tabela `otp_codes`: essa é `user_id NOT NULL` e ligada a dispositivo. Fica na tabela do que confirma — hoje `list_addresses`, e a partir do `T017-A` em `senders`. | Must | IMPLEMENTADO |
 | FR-6.4 | Importação de um `.csv` com colunas de endereço (e nome opcional). Uma linha inválida é contada e listada, não aborta a importação. O ficheiro inteiro inválido **é** erro. | Must | IMPLEMENTADO |
-| FR-6.5 | A importação **não confirma** ninguém. Endereços importados entram como pendentes e o utilizador dispara a confirmação. Importar 5000 endereços que confirmaram por BCC já é spam, e o produto não é o que faz essa parte. | Must | IMPLEMENTADO |
-| FR-6.6 | Teto de destinatários por lista (`MAILUTILS_MAX_LIST_SIZE`, por omissão 5000) e teto de confirmações pendentes por utilizador (`MAILUTILS_MAX_PENDING_CONFIRMATIONS`, por omissão 500). Ao exceder, recusa com mensagem que diz qual limite. | Must | IMPLEMENTADO |
-| FR-6.7 | Um endereço pode ser descadenciado pelo próprio destinatário, sem sessão e sem passar pelo utilizador, por um link com token assinado. A reposição **exige novo código**: o dono da lista pode disparar o pedido, não confirmar por outrem. | Must | IMPLEMENTADO |
+| FR-6.5 | **Inverte-se.** *Hoje*: a importação **não confirma** ninguém, e o utilizador dispara a confirmação. *Depois do `T017-A`*: a importação coloca os endereços activos, sem pedido de confirmação e sem email enviado, e a interface **diz ao operador, no momento da importação, que ele assume o consentimento**. A afirmação é parte do produto: um operador que não sabe que assumiu a responsabilidade não pode ter concordado com ela. | Must | IMPLEMENTADO (leitura de hoje) / DRAFT (leitura do T017-A) |
+| FR-6.6 | Teto de destinatários por lista (`MAILUTILS_MAX_LIST_SIZE`, por omissão 5000). Ao exceder, recusa com mensagem que diz qual limite. O teto de confirmações pendentes por utilizador (`MAILUTILS_MAX_PENDING_CONFIRMATIONS`) **deixa de existir** com o `T017-A`, porque não há pendentes. | Must | IMPLEMENTADO (teto de lista) / DRAFT (tecto de pendentes removido) |
+| FR-6.7 | Um endereço pode ser descadenciado pelo próprio destinatário, sem sessão e sem passar pelo utilizador, por um link com token assinado. Um `unsubscribed_at IS NOT NULL` **nunca** entra num `SELECT` de envio, e a reposição não pode ser feita pelo dono da lista. | Must | IMPLEMENTADO |
 | FR-6.8 | Todos os emails enviados trazem `List-Unsubscribe` com um endereço `mailto:` e um URL com token assinado, mais `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. | Must | DRAFT |
+| FR-6.9 | **Novo.** O `from` de uma lista é um remetente do utilizador, confirmado **uma vez por código** e reutilizável entre listas. Sem `senders.confirmed_at IS NOT NULL`, a lista não entra em nenhum caminho de envio — nem imediato, nem agendado, nem reexecução. | Must | DRAFT |
+| FR-6.10 | **Novo.** Pedir e confirmar o `from` exige sessão **e** verificação de dono em cada operação. O código nunca vai na resposta HTTP, a comparação é `hmac.compare_digest`, há expiração e há tecto de tentativas. Confirmar o `from` é confirmar que o endereço é do operador — nunca que os destinatários consentiram. | Must | DRAFT |
+
 
 ### FR-7 Composição e envio
 
@@ -108,6 +111,8 @@ Estado: `DRAFT` | `IMPLEMENTADO` | `VERIFICADO`. Só `VERIFICADO` tem teste.
 | FR-8.3 | Um envio cujo `claimed_at` expirou passa a `falhado` com os contadores parciais. **Nunca** volta a `agendado`: re-enfileirar reenvia a quem já recebeu. | Must | DRAFT |
 | FR-8.4 | O loop de agendamento é desactivável por `MAILUTILS_SCHEDULER=off`, e os testes correm com ele desligado — um teste que dependa de um thread em background não é determinístico. | Must | DRAFT |
 | FR-8.5 | O envio é feito em blocos (`MAILUTILS_SEND_BATCH`, por omissão 200 destinatários por ciclo) para que uma lista grande não segure o loop nem impeça o encerramento. | Should | DRAFT |
+| FR-8.6 | **Novo.** A cadência é **derivada do score** de spam do email inteiro (assinatura incluída, `FR-7.4`) por uma tabela versionada, com um override manual por lista (`cadence_seconds`). O override pode **aumentar** o intervalo e nunca baixar o mínimo calculado: pedir mais depressa não é um direito, é o que o tecto existe para impedir. | Must | DRAFT |
+| FR-8.7 | **Novo, e os números ainda não estão aprovados.** A forma de `FR-8.6` está decidida; os valores da tabela de score→cadência **não** foram assinados por ninguém e não entram em `main` sem isso. Vivem numa constante nomeada como proposta, e trocar a proposta por números aprovados é editar essa constante — nunca o código que a consome. | Must | DRAFT |
 
 ## Non-Functional
 
