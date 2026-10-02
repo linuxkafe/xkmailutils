@@ -14,11 +14,15 @@ não do script.
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
 
+# `git` resolvido, não `git`: o lint recusa um PATH parcial e um teste
+# não deve assumir que o binário vive em /usr/bin.
+GIT = shutil.which("git") or "git"
 RAIZ = Path(__file__).resolve().parent.parent
 DEPLOY = RAIZ / "deploy.sh"
 COMPOSE = RAIZ / "docker-compose.yml"
@@ -354,3 +358,111 @@ class TestOAvisoDoEmail:
             "MAILUTILS_MAIL_FROM=",
         ):
             assert chave in texto, f"o .env gerado não tem `{chave}`"
+
+
+class TestAesNaoEProducto:
+    """`aes/` e `.aes/` são andaço de processo, e não são versionados.
+
+    A regra é do dono (2026-10-02) e o motivo está escrito no `.gitignore`:
+    kanban, tickets e revisões de peers são registo de trabalho. Um clone do
+    software não precisa deles para correr, e tê-los versionados polui o
+    repositório de quem só quer ler o código.
+
+    O que este ficheiro **não** deixa passar é a consequência que essa
+    separação cria: documentação que cita ficheiros que um clone não tem. Foi
+    o que aconteceu com `CLAUDE.md`, que listava `aes/kanban.md` no Stable
+    Context — uma linha que aponta para um ficheiro inexistente para toda a
+    gente que não esteja a trabalhar neste andaço.
+    """
+
+    def test_aes_esta_no_gitignore(self) -> None:
+        texto = (RAIZ / ".gitignore").read_text(encoding="utf-8")
+        assert re.search(r"^aes/$", texto, re.M), "aes/ não está no .gitignore"
+        assert re.search(r"^\.aes/$", texto, re.M), ".aes/ não está no .gitignore"
+
+    def test_aes_nao_e_versionado(self) -> None:
+        """A regra só existe se o git a cumplir. Um `.gitignore` sem `rm --cached`
+        não tira nada de dentro do índice, e o próximo `git add .` traz tudo
+        de volta."""
+        dentro = subprocess.run(  # noqa: S603 - argumentos literais, sem shell
+            [GIT, "ls-files", "aes", ".aes"],
+            cwd=RAIZ,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+        assert dentro == "", f"ainda versionados em aes/ ou .aes/:\n{dentro}"
+
+    def test_a_prova_por_mutacao_esta_versionada(self) -> None:
+        """A excepção que prova a regra.
+
+        `NFR-16` cita `docs/MUTATIONS.md`, e sem ele um clone não consegue
+        confirmar que cada mutação morre. Saiu de `aes/` por ser **evidência do
+        produto** e não andaço — que é a distinção que este ficheiro fixa.
+        """
+        caminho = RAIZ / "docs" / "MUTATIONS.md"
+        assert caminho.is_file(), "a prova por mutação não está em docs/"
+        dentro = subprocess.run(  # noqa: S603 - argumentos literais, sem shell
+            [GIT, "ls-files", "docs/MUTATIONS.md"],
+            cwd=RAIZ,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+        assert dentro == "docs/MUTATIONS.md", "docs/MUTATIONS.md não está versionado"
+
+    def test_nenhuma_referencia_presa_a_um_ficheiro_de_aes(self) -> None:
+        """Documentação versionada não aponta para ficheiros que um clone não tem.
+
+        Varre `CLAUDE.md`, `README.md` e `docs/*.md`, e exige que cada
+        referência a `aes/` seja **descritiva** — "vive em aes/", "não está no
+        repositório" — e não um link a um ficheiro concreto.
+        """
+        documentos = [RAIZ / "CLAUDE.md", RAIZ / "README.md", *sorted((RAIZ / "docs").glob("*.md"))]
+        padroes_concretos = re.compile(r"`aes/[A-Za-z0-9_.\-/]+\.(?:md|yaml|json|sh)`")
+        problemas: list[str] = []
+        for documento in documentos:
+            texto = documento.read_text(encoding="utf-8")
+            for linha in texto.splitlines():
+                achado = padroes_concretos.search(linha)
+                if not achado:
+                    continue
+                # Descritivo: a linha diz onde vive, não aponta para ele.
+                contexto = linha.lower()
+                descritivo = any(
+                    marca in contexto
+                    for marca in (
+                        "não está no repositório",
+                        "nao esta no repositorio",
+                        "vive em",
+                        "andaço de processo",
+                        "nao e distribuido",
+                    )
+                )
+                if not descritivo:
+                    problemas.append(f"{documento.name}: {linha.strip()[:90]}")
+        assert not problemas, (
+            "documentação versionada aponta para ficheiros de aes/, que um clone "
+            "não tem:\n  " + "\n  ".join(problemas)
+        )
+
+    def test_o_script_de_mutacoes_escreve_para_docs(self) -> None:
+        """O caminho de saída tem de estar versionado, senão `make mutations`
+        escreve para um sítio que o git ignora e ninguém mais o vê."""
+        texto = (RAIZ / "scripts" / "run-mutations.py").read_text(encoding="utf-8")
+        # Sem `re` para isto. A linha é `SAIDA = RAIZ / "docs" / "MUTATIONS.md"`
+        # ou `SAIDA = RAIZ / "docs/MUTATIONS.md"`; as duas formas aparecem
+        # conforme o gosto de quem escreve, e uma expressão regular que só
+        # reconhece uma delas falha por causa da sintaxe e não do caminho —
+        # que foi exactamente o que aconteceu com a primeira versão deste
+        # teste: falhava, e não por o caminho estar errado.
+        linha = next((x for x in texto.splitlines() if x.strip().startswith("SAIDA")), None)
+        assert linha, "não encontrei a constante SAIDA"
+        partes = [p.strip(" '\"") for p in re.split(r"/|\s+", linha) if p.strip(" '\"")]
+        assert partes[-2:] == ["docs", "MUTATIONS.md"], (
+            f"SAIDA aponta para {partes[-2:]!r} e não para docs/MUTATIONS.md"
+        )
+        assert (RAIZ / partes[-2] / partes[-1]).is_file(), (
+            "docs/MUTATIONS.md não existe — `make mutations` escreveria "
+            "para um caminho que não está versionado"
+        )

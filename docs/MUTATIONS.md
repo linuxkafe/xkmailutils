@@ -3,11 +3,13 @@ ticket: T008
 tipo: prova-por-mutação
 gerado-por: scripts/run-mutations.py
 regenerar: python3 scripts/run-mutations.py --escrever
-nota: este ficheiro é GERADO. O que está em "Saída observada" é a
-  saída real do comando, escrita pelo script — ninguém escreve aqui à
-  mão. A primeira ronda afirmava uma prova por mutação que não deixou
-  rasto, e duas personas provaram que três testes não detectavam as
-  mutações que alegavam detectar. (F-10)
+nota: |
+  Este ficheiro é GERADO. O que está em "Saída observada" é a saída real do
+  comando, escrita pelo script — ninguém escreve aqui à mão.
+
+  Vive em `docs/` e não em `aes/tickets/` porque é **evidência do produto** e
+  não andaço de processo: `NFR-16` cita-o, e um clone tem de poder verificar
+  que cada mutação morre sem confiar no histórico do git.
 ---
 
 # Prova por mutação — T008

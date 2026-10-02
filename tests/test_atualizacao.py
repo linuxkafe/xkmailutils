@@ -466,3 +466,74 @@ def test_a_actualizacao_avisa_que_a_base_sobrevive(deploy: str) -> None:
     bloco = _sem_acentos(_bloco_impresso(deploy)).upper()
     assert "NAO E TOCADA" in bloco, "o bloco não diz que a base não é tocada"
     assert "COPIA DE SEGURANCA" in bloco, "o bloco não menciona a cópia de segurança"
+
+
+class TestOComposeCompativelComAVersao:
+    """O `-C` do `docker compose` não existe. Este é um bug que aconteceu.
+
+    `docker compose -C <dir>` deu `unknown shorthand flag: 'C' in -C` num
+    servidor com Compose v5. O flag chama-se `--project-directory` no v2 e não
+    existe no v1. O `deploy.sh` usava-o em três sítios e o `--actualizar` não
+    arrancava — a pessoa via "a copia de seguranca falhou" e a causa estava a
+    três linhas de distância, escondida.
+
+    A solução é não depender da versão: `cd` para o directório funciona nos três.
+    """
+
+    def test_a_funcao_actualizar_nao_usa_o_flag_C(self, deploy: str) -> None:
+        corpo = _corpo_da_funcao(deploy)
+        assert " compose -C " not in corpo, (
+            "actualizar() usa `compose -C`, que não existe no Compose v5"
+        )
+
+    def test_nenhum_comando_impresso_usa_o_flag_C(self, deploy: str) -> None:
+        """O texto que o utilizador copia tem de correr na máquina dele."""
+        for linha in _bloco_impresso(deploy).splitlines():
+            limpa = linha.strip()
+            if not limpa.startswith(("docker ", "cd ")):
+                continue
+            assert " compose -C " not in limpa and " compose -C$" not in limpa, (
+                f"comando impresso usa o flag -C, que falha: {limpa!r}"
+            )
+
+    def test_o_todo_do_script_nao_usa_o_flag_C(self, deploy: str) -> None:
+        """Todo o resto do script tem o mesmo problema.
+
+        Este teste é mais largo de propósito: `deploy.sh` já tinha `-C` em mais
+        um sítio, e só o primeiro foi corrigido na primeira vez. Um teste por
+        função deixa passar o segundo sítio.
+        """
+        for numero, linha in enumerate(deploy.splitlines(), 1):
+            limpa = linha.strip()
+            if limpa.startswith("#"):
+                continue
+            assert " compose -C " not in limpa, (
+                f"deploy.sh:{numero} usa `compose -C`, que não existe: {limpa!r}"
+            )
+
+    def test_a_actualizacao_entra_no_directorio(self, deploy: str) -> None:
+        """O `cd` é o que substitui o flag, e tem de lá estar."""
+        corpo = _corpo_da_funcao(deploy)
+        assert 'cd "$dir"' in corpo, (
+            "actualizar() não entra no directório de instalação — é o que "
+            "substitui o `-C` e funciona em qualquer versão do Compose"
+        )
+
+    def test_a_copia_e_feita_como_root_e_com_a_fonte_so_de_leitura(self, deploy: str) -> None:
+        """Duas decisões que evitam um problema cada uma.
+
+        - **root**: a cópia é do operador, não da aplicação. Numa instalação
+          com o volume de uma imagem antiga — a correr como root — a aplicação
+          (uid 10001) não consegue escrever em `/data`, e a cópia falhava.
+        - **`mode=ro`**: abrir a base a escrever cria `-wal` e `-shm`; a
+          correr como root, criava-os com o dono root e **a aplicação deixava
+          de poder escrever na base**. Quebrar a base ao tentar fazer uma cópia
+          dela é o pior resultado possível.
+        """
+        corpo = _corpo_da_funcao(deploy)
+        assert "--user 0:0" in corpo, "a cópia tem de correr como root"
+        assert "mode=ro" in corpo, (
+            "a cópia tem de abrir a base só de leitura, ou deixa ficheiros "
+            "-wal/-shm com o dono root"
+        )
+        assert "PRAGMA integrity_check" in corpo, "a cópia não é verificada"

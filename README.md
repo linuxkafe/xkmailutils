@@ -158,7 +158,7 @@ cd /opt/xkmailutils && sudo ./deploy.sh --actualizar
 ```
 
 O esquema só anda para a frente. Uma migração que se verifica para trás
-precisa de ser feita à mão, e o ficheiro `aes/tickets/` diz qual foi a versão.
+precisa de ser feita à mão, e o `git log` diz qual foi a versão.
 
 ### Uma coisa que este `docker-compose.yml` não permite
 

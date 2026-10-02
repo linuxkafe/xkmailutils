@@ -38,9 +38,27 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 GRAFO="aes/graph/islands.yaml"
 
+# O grafo não está no repositório — `aes/` é andaço de processo e está no
+# `.gitignore`. Num clone limpo este gate não tem o que medir, e dizer isso é a
+# resposta certa. Falhar seria mentir: o gate não tem nenhuma claim para
+# reprovar, e sair 1 diria "as claims estão erradas".
 if [ ! -f "$GRAFO" ]; then
-    echo "  FALHA: $GRAFO não existe. Um gate epistémico sem claims mede zero."
-    exit 1
+    cat <<AVISO
+  SKIP  $GRAFO não está no repositório.
+
+  O andaço de processo do AES (kanban, tickets, revisões) vive em 'aes/' e
+  está no \`.gitignore\` — um clone do software não precisa dele para correr,
+  e este gate não tem claims para medir.
+
+  Para o correr a nível local, com o andaço presente:
+
+      ./scripts/epistemics-check.sh
+
+  Isto NÃO é um veredicto. É a ausência de uma medida. A prova por mutação,
+  que é o que fecha claims sobre código, está em 'make mutations' e escreve
+  'docs/MUTATIONS.md' — esse é versionado.
+AVISO
+    exit 0
 fi
 
 echo "Gate epistémico — $GRAFO"

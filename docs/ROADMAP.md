@@ -46,7 +46,8 @@ Depois passou por uma revisão `aes-peer-review` (multi-perspectiva, 4
 personas) que encontrou mais 14: **3 BLOCKER**, entre eles a assinatura por
 omissão a ser ilegível no cliente de email (contraste 1.14:1) e a CI não
 instalar o browser. Todos corrigidos, cada um com mutação provada. Ver
-`aes/tickets/T008-playwright-e2e.md` e `aes/peer-reviews/T008/`.
+o ticket do T008 e a revisão em `aes/peer-reviews/T008/`, ambos no
+andaço de processo que não é distribuído com o software.
 
 ### T011 — Logótipo para ecrãs escuros
 `prefers-color-scheme: dark` no email não é fiável. A maioria dos clientes

@@ -127,24 +127,107 @@ actualizar() {
     [ -d "$dir" ] || falhar "nao ha instalacao em $dir"
     [ -f "$dir/docker-compose.yml" ] || falhar "$dir nao parece uma instalacao do mailutils"
 
+    # `cd` e nao um flag. O caminho de execucao e um dado do contexto de
+    # trabalho: `-C` nao existe no Compose v5, chama-se `--project-directory` no
+    # v2, e o v1 nao tem nenhum dos dois. Entrar no directorio funciona nos tres
+    # e nao depende da versao.
+    cd "$dir" || falhar "nao consigo entrar em $dir"
+
     if docker compose version >/dev/null 2>&1; then
-        compose="docker compose -C $dir"
+        compose="docker compose"
     else
-        compose="docker-compose -f $dir/docker-compose.yml"
+        compose="docker-compose"
     fi
 
     passo "Copia de seguranca da base de dados"
+
+    # Sem preflight. A primeira versao perguntava `compose ps` e, se essa
+    # pergunta falhasse por qualquer razao, concluia que o contentor estava
+    # parado — e dizia isso a quem tem o contentor a correr. Um `docker
+    # compose` que nao responde nao e um contentor parado.
+    #
+    # Em vez de adivinhar, tenta-se e mostra-se o erro real. Um deploy que
+    # falha sem dizer porque e pior do que um deploy que falha.
     carimbo=$(date +%Y%m%d-%H%M%S)
-    if ! $compose exec -T mailutils python -c "
+    destino="$dir/copia-$carimbo.db"
+
+    # Duas decisões que nao eram obvias.
+    #
+    # 1) **Fonte em modo de leitura.** Abrir a base a escrever cria ficheiros
+    #    `-wal` e `-shm`; a correr como root, criava-os com o dono root e a
+    #    aplicacao deixava de poder escrever na base. `mode=ro` nao escreve
+    #    nada e o `backup()` funciona na mesma.
+    # 2) **Como root.** A copia e uma operacao de operador, nao da aplicacao.
+    #    Correr como root tira a classe inteira de falhas de permissao — que e
+    #    o que falha numa instalacao com o volume de uma imagem antiga — e a
+    #    fonte ser de leitura tira o risco que isso trazia.
+    # A atribuicao vai dentro do `if` de proposito, por causa do `set -e`: uma
+    # atribuicao cujo comando falha mata o script antes de o `if` ser avaliado.
+    #
+    # E nao com `|| true`, que resolveria o `set -e` e criaria um pior
+    # problema — o `$?` passava a ser sempre 0 e uma copia falhada seria lida
+    # como bem sucedida. Foi o que aconteceu na versao anterior deste ficheiro:
+    # `exit=1` e nada mais no ecra, porque o script morria sem dizer porquê.
+    if saida=$($compose exec -T --user 0:0 mailutils python -c "
 import sqlite3
-a = sqlite3.connect('/data/mailutils.db')
+a = sqlite3.connect('file:/data/mailutils.db?mode=ro', uri=True)
 b = sqlite3.connect('/data/copia.db')
 a.backup(b)
 b.close()
-" >/dev/null 2>&1; then
+c = sqlite3.connect('/data/copia.db')
+estado = c.execute('PRAGMA integrity_check').fetchone()[0]
+c.close()
+assert estado == 'ok', estado
+" 2>&1); then
+        copiou="sim"
+    else
+        copiou="nao"
+    fi
+
+    if [ "$copiou" != "sim" ]; then
+        erro "nao consegui copiar a base de dados. A actualizacao NAO continua."
+        erro "o que a copia respondeu, sem filtrar:"
+        printf '%s\n' "$saida" | sed 's/^/    /'
+        erro ""
+        erro "duas causas habituais:"
+        erro "  - o contentor nao esta a correr:  cd $dir && $compose ps"
+        erro "  - a base nao esta onde se espera: cd $dir && $compose exec -T --user 0:0 mailutils ls -l /data"
+        falhar "nada foi mudado. A base esta intacta."
+    fi
+
+    carimbo=$(date +%Y%m%d-%H%M%S)
+    destino="$dir/copia-$carimbo.db"
+
+    # Duas decisões que nao eram obvias.
+    #
+    # 1) **Fonte em modo de leitura.** Abrir a base a escrever cria ficheiros
+    #    `-wal` e `-shm` — e a correr como root, criava-os com o dono root, e a
+    #    aplicacao deixava de poder escrever na base. `mode=ro` nao escreve
+    #    nada e o `backup()` funciona na mesma.
+    # 2) **Como root.** A copia e uma operacao de operador, nao da aplicacao.
+    #    Correr como root tira a classe inteira de falhas de permissao, e a
+    #    fonte ser de leitura tira o risco que isso trazia.
+    if ! $compose exec -T --user 0:0 mailutils python -c "
+import sqlite3
+a = sqlite3.connect('file:/data/mailutils.db?mode=ro', uri=True)
+b = sqlite3.connect('/data/copia.db')
+a.backup(b)
+b.close()
+c = sqlite3.connect('/data/copia.db')
+assert c.execute('PRAGMA integrity_check').fetchone()[0] == 'ok'
+c.close()
+"; then
         falhar "a copia de seguranca falhou. A actualizacao NAO continua."
     fi
-    printf "%s  copia feita dentro do volume; a base e consistente%s\n" "$G" "$N"
+
+    # A copia sai do contentor. Dentro do volume, um `docker compose down -v`
+    # leva-a embora — e e precisamente a operação que alguém faz a seguir a uma
+    # copia, sem pensar nela.
+    if ! $compose cp mailutils:/data/copia.db "$destino" >/dev/null 2>&1; then
+        falhar "a copia ficou feita mas nao a consegui trazer para $dir. A actualizacao NAO continua."
+    fi
+    $compose exec -T --user 0:0 mailutils rm -f /data/copia.db >/dev/null 2>&1 || true
+    printf "%s  copia em %s%s\n" "$G" "$destino" "$N"
 
     passo "git pull"
     git -C "$dir" pull --ff-only \
@@ -540,7 +623,7 @@ ${A}${E}${G}O email não está configurado.${N}${E}${A}
 
   e depois:
 
-      docker compose -C $RAIZ up -d --force-recreate
+      cd $RAIZ && docker compose up -d --force-recreate
 
 FIM
 fi
@@ -570,22 +653,26 @@ ${G}ACTUALIZAR — a base de dados não é tocada${N}
 
 ${G}PARAR${N}
 
-    docker compose -f $RAIZ/docker-compose.yml logs -f
-    docker compose -C $RAIZ down
+    cd $RAIZ && docker compose logs -f
+    cd $RAIZ && docker compose down
 
 ${E}ISTO APAGA A BASE DE DADOS:${N}
 
-    docker compose -C $RAIZ down -v
+    cd $RAIZ && docker compose down -v
 
   A diferença entre 'down' e 'down -v' é o -v, e o -v é tudo. Verificado:
   'down' deixa o volume intacto; 'down -v' remove-o.
 
-  Antes de o fazer, uma cópia:
+  Antes de o fazer, uma cópia. A fonte é só de leitura: abrir a base a
+  escrever cria ficheiros -wal e -shm, e a correr como root criava-os com o
+  dono root e a aplicação deixava de poder escrever. E sai para fora do
+  contentor, porque dentro do volume um 'down -v' leva-a embora.
 
-    docker compose -C $RAIZ exec -T mailutils \\
-        python -c "import sqlite3; a=sqlite3.connect('/data/mailutils.db'); \\
+    cd $RAIZ && docker compose exec -T --user 0:0 mailutils \\
+        python -c "import sqlite3; \\
+        a=sqlite3.connect('file:/data/mailutils.db?mode=ro', uri=True); \\
         b=sqlite3.connect('/data/copia.db'); a.backup(b); b.close()"
-    docker compose -C $RAIZ cp mailutils:/data/copia.db ./copia-\$(date +%F).db
+    cd $RAIZ && docker compose cp mailutils:/data/copia.db ./copia-\$(date +%F).db
 
 FIM
 
