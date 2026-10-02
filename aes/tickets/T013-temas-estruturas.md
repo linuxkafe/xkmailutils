@@ -24,14 +24,26 @@ O dono escolheu as duas. Este ticket faz as duas.
 
 ## Critérios de aceitação
 
-- [x] `THEMES` tem 7 paletas, todas por cima de 4.5:1 para `text` e `muted`
-- [x] `LAYOUTS` tem 4 estruturas: `stack`, `compact`, `columns`, `boxed`
-- [x] `stack` produz **byte a byte** o HTML que produzia antes
-- [x] A estrutura chega ao HTML exportado (formulário → campo → coluna → render)
-- [x] Preview e exportação concordam sobre a estrutura
-- [x] Uma estrutura desconhecida cai no default **com aviso**, não em silêncio
-- [x] Tokens dos temas e das estruturas em `docs/DESIGN.md`
-- [x] `make check` verde, com 17/17 mutações detectadas
+Escrito na forma que o `scripts/verify-implementation.sh` mede, e não na forma
+que se lê. O T014 corrigiu o script para ler a secção em português; este
+ticket é o primeiro a usar essa forma desde a correcção.
+
+- [ ] `PYTHONPATH=src python3 -m pytest tests/test_renderer.py -q --no-cov` exits 0 — os testes do renderer, com as 28 combinações
+- [ ] `src/mailutils/signatures/renderer.py` contains "LAYOUTS" — as quatro estruturas
+- [ ] `src/mailutils/signatures/renderer.py` contains "graphite" — a primeira das cinco paletas novas
+- [ ] `src/mailutils/db.py` contains "layout" — a coluna que faz o layout persistir
+- [ ] `docs/DESIGN.md` contains "border-radius:8px" — o token novo vive na folha **e** no documento
+- [ ] `scripts/run-mutations.py` contains "M-16" — a mutação que prova que a estrutura chega ao HTML
+- [ ] make check target exists — o gate
+
+### Critérios que o script não mede
+
+- As 28 combinações abrem num Thunderbird e num Outlook. Nenhum script deste
+  projecto abre um email num cliente real; é o passo [4] do
+  `human-validation.sh`.
+- `stack` produz byte a byte o HTML de antes. **Verdadeiro e não provado** —
+  ver M-10, que continua aberto. O teste mais próximo compara fragmentos, e a
+  mutação `display:inline-block` → `display:inline` passa com a suite verde.
 
 ## Âmbito
 
@@ -97,6 +109,7 @@ seja bonito no Outlook.
 ## Verificação
 
 ```bash
+./scripts/verify-implementation.sh T013   # 7 passed, 0 failed, 0 declarados
 make check
 ```
 
