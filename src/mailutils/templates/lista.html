@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block titulo %}{{ lista.name }} — Listas{% endblock %}
+
+{% block conteudo %}
+<h1>{{ lista.name }}</h1>
+
+{% if aviso_chave %}
+  {% if aviso_chave == 'confirmacao' %}
+  {# M-08: `n` nunca chegava ao contexto e a soma incluía quem não recebeu
+     nada. As quatro contagens chegam já convertidas em inteiros, pela rota —
+     ver `_resumo_do_pedido`. #}
+  <div class="aviso" role="status">
+    <p><strong>{{ enviados }}</strong> código(s) enviado(s).</p>
+    <ul class="lista-plana small">
+      {% if ja_confirmados %}<li>{{ ja_confirmados }} já estava(m) confirmado(s).</li>{% endif %}
+      {% if em_cooldown %}<li>{{ em_cooldown }} em período de espera — pedido há menos de um minuto.</li>{% endif %}
+      {% if excedidos %}<li>{{ excedidos }} não entraram: o limite de confirmações por confirmar foi atingido.</li>{% endif %}
+      {% if not ja_confirmados and not em_cooldown and not excedidos and not enviados %}
+      <li>Nenhum endereço foi escolhido.</li>{% endif %}
+    </ul>
+    {% if enviados %}
+    <p>Quem recebeu o código tem {{ 10 }} minutos para confirmar. Sem
+       confirmação, o endereço não entra em nenhum envio.</p>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="aviso" role="status">{{ mensagens[aviso_chave] }}</p>
+  {% endif %}
+{% endif %}
+{% if erro_chave %}<p class="erro" role="alert">{{ mensagens[erro_chave] }}</p>{% endif %}
+{% if erro_chave == 'importacao' and detalhe %}
+  <p class="erro" role="alert">{{ detalhe }}</p>
+{% endif %}
+
+{% if importacao %}
+<div class="card" role="status">
+  <h2>Importação</h2>
+  <p>
+    {{ importacao.importados }} importados,
+    {{ importacao.ja_existentes }} já estavam na lista,
+    {{ importacao.total_rejeitado }} rejeitados.
+  </p>
+  {% if importacao.total_rejeitado and importacao.total_rejeitado > 4 %}
+  <p class="erro" role="alert">
+    {{ importacao.total_rejeitado }} linha(s) do ficheiro não entraram na lista.
+    Nenhum dos endereços abaixo recebeu um código e nenhum vai receber.
+  </p>
+  {% endif %}
+  {% if importacao.invalidos %}
+  <details>
+    <summary>Ver o que não entrou</summary>
+    <ul class="lista-plana">
+      {% for item in importacao.invalidos %}<li>{{ item }}</li>{% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+  <p class="muted small">
+    Importar não confirma ninguém. Escolha os endereços abaixo e peça a
+    confirmação.
+  </p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Adicionar endereço</h2>
+  <form method="post" action="{{ raiz }}/listas/{{ lista.id }}/enderecos"
+        class="grid grid--form">
+    <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
+    <label for="novo-nome">Nome (opcional)</label>
+    <input type="text" id="novo-nome" name="nome" maxlength="120">
+    <label for="novo-email">Email</label>
+    <input type="email" id="novo-email" name="email" autocomplete="off" required>
+    <button type="submit" class="btn btn--primary">Adicionar</button>
+  </form>
+  <p class="muted small">
+    Adicionar não envia nada. O email só sai quando pedir a confirmação.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Importar ficheiro</h2>
+  <form method="post" enctype="multipart/form-data"
+        action="{{ raiz }}/listas/{{ lista.id }}/importar" class="grid grid--form">
+    <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
+    <label for="csv">Ficheiro CSV</label>
+    <input type="file" id="csv" name="ficheiro" required>
+    <p class="muted small">
+      Uma coluna de email. A primeira linha pode ser o cabeçalho
+      (<code>nome,email</code>). Linhas inválidas são listadas e não abortam a
+      importação.
+    </p>
+    <button type="submit" class="btn btn--secondary">Importar</button>
+  </form>
+</div>
+
+{% if enderecos %}
+<div class="card">
+  <h2>Endereços ({{ enderecos|length }} de {{ teto }})</h2>
+  <form method="post" action="{{ raiz }}/listas/{{ lista.id }}/confirmar-pedido">
+    <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
+    <table class="tabela">
+      <caption class="visually-hidden">
+        Endereços da lista, com o estado de confirmação
+      </caption>
+      <thead>
+        <tr><th scope="col">Estado</th><th scope="col">Email</th>
+          <th scope="col">Nome</th><th scope="col">Acções</th></tr>
+      </thead>
+      <tbody>
+        {% for e in enderecos %}
+        <tr>
+          <td>
+            {% if e.unsubscribed_at %}
+              <span class="etiqueta etiqueta--warn">descadenciado</span>
+            {% elif e.confirmed_at %}
+              <span class="etiqueta etiqueta--ok">confirmado</span>
+            {% else %}
+              <label class="visually-hidden" for="sel-{{ e.id }}">
+                Escolher {{ e.email }} para confirmar
+              </label>
+              <input type="checkbox" id="sel-{{ e.id }}" name="enderecos"
+                     value="{{ e.id }}" data-email="{{ e.email }}">
+              <span class="muted small">por confirmar</span>
+            {% endif %}
+          </td>
+          <th scope="row">{{ e.email }}</th>
+          <td>{{ e.name or '—' }}</td>
+          <td>
+            {% if e.unsubscribed_at %}
+            <form method="post"
+                  action="{{ raiz }}/listas/{{ lista.id }}/enderecos/{{ e.id }}/descadenciar">
+              <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
+              <button type="submit" class="btn btn--sm btn--secondary">Repor inscrição</button>
+            </form>
+            {% else %}
+            <form method="post"
+                  action="{{ raiz }}/listas/{{ lista.id }}/enderecos/{{ e.id }}/remover">
+              <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
+              <button type="submit" class="btn btn--sm btn--secondary">Remover</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted small">
+      Só as caixas marcadas recebem o código. Um endereço confirmado há mais de
+      {{ max_tentativas }} tentativas de código diferentes tem de pedir outro.
+    </p>
+    <button type="submit" class="btn btn--primary">Enviar código aos marcados</button>
+  </form>
+</div>
+{% else %}
+<p class="muted">Esta lista ainda não tem endereços.</p>
+{% endif %}
+
+<div class="actions">
+  <form method="post" action="{{ raiz }}/listas/{{ lista.id }}/eliminar">
+    <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
+    <button type="submit" class="btn btn--danger">Eliminar lista</button>
+  </form>
+</div>
+{% endblock %}

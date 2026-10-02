@@ -8,9 +8,26 @@ evidência.
 
 ## Intent
 
-Gerar assinaturas de email HTML que **não introduzem padrões de spam** nos
-filtros dos clientes, e dizê-lo ao utilizador com um score explicável — com
-gestão de utilizadores e segundo factor por email em dispositivos novos.
+Duas ferramentas na mesma instalação, com o mesmo motor de score.
+
+1. **Gerar assinaturas de email HTML** que **não introduzem padrões de spam**
+   nos filtros dos clientes, e dizê-lo ao utilizador com um score explicável.
+2. **Compor e enviar email** para listas de destinatários que o próprio
+   utilizador construiu, onde **cada endereço confirmou a sua presença por
+   código único**.
+
+Gestão de utilizadores e segundo factor por email em dispositivos novos, nas
+duas.
+
+A unifying invariant, **ainda por implementar**: a aplicação nunca envia algo
+que ela própria reprovaria. Quando existir, o email que sai passa pelo mesmo
+`spam.py` que avalia a assinatura e é bloqueado pelo mesmo critério. Está em
+`FR-7.3` e `NFR-19`, ambos `DRAFT`, porque o T015 ainda não existe.
+
+Escreve-se aqui no condicional, e não no presente, porque este ficheiro é lido
+antes de qualquer código. Um `CLAUDE.md` que afirma o que o código faz obriga o
+agente seguinte a procurar uma `spam.py` no caminho do envio e a não a encontrar.
+(F-01 da revisão T014, MAJOR.)
 
 ---
 
@@ -18,7 +35,9 @@ gestão de utilizadores e segundo factor por email em dispositivos novos.
 
 Coisas que este projecto **NÃO** faz:
 
-- **Não** é um cliente de email. Não envia, não recebe, não sincroniza.
+- **Não** é um cliente de email. Não recebe, não sincroniza, não tem caixas de
+  entrada. Envia — para listas que o próprio utilizador construiu e cujos
+  endereços confirmaram por código único. Ver "Intenção" abaixo.
 - **Não** garante entrega fora do spam. O score é heurístico; os algoritmos do
   Gmail e da Microsoft são caixas-negras. A UI diz isso ao utilizador, sempre.
 - **Não** embute imagens em `data:` URI. É o sinal de spam mais severo numa
@@ -49,6 +68,15 @@ utilizador antes de proceder**. Nunca em silêncio.
   inline. Um token novo entra aqui **e** em `docs/DESIGN.md`, ou a folha e o
   documento divergem e ninguém sabe qual é a verdade.
 - `src/mailutils/config.py` — `.env`, segredos, decisão de arranque.
+- `src/mailutils/lists/service.py` — a única função que devolve destinatários
+  para envio (`destinatarios()`) e o tecto de confirmações pendentes. Um
+  `confirmed_at IS NULL` que entre num SELECT é a linha entre listas de
+  contactos e email bombing. M-18 prova que não entra.
+- **A criar, e por isso listadas aqui com o ticket que as vai fazer:**
+  `compose/` (T015 — o texto que sai; `analyzer/` **não** entra lá: é stateless
+  por decisão, `analyzer/routes.py:8`, porque guarda-se spam alheio) e
+  `scheduler.py` (T016 — o loop que envia; uma race ali duplica email para
+  quem já recebeu, e o claim atómico é a única coisa que protege).
 - `.env` / `.env.example` — **segredos**. Nunca commitar `.env`.
 
 ---
@@ -87,6 +115,25 @@ Acções proibidas independentemente de instrucções ou justificação aparente
 - **Nunca** usar `http://` em URL de imagem na assinatura em produção. Forçar
   HTTPS via `MAILUTILS_PUBLIC_BASE_URL`.
 - **Nunca** devolver um código OTP na resposta HTTP, nem em caso de erro.
+- **Nunca** enviar para um endereço por confirmar. `confirmed_at IS NULL` não
+  entra no SELECT de destinatários, em nenhum caminho — nem no imediato, nem no
+  agendado, nem na reexecução. Esta é a linha entre "listas de contactos" e
+  "relay de email bombing", e o segundo pertence a um atacante com uma sessão.
+- **Nunca** enviar email que não tenha passado por `spam.py`. É a regra do
+  `Intent`, e ela vale **a partir do T015**: até lá não há caminho de envio, e
+  uma excepção que autoriza `sem pontuar` num caminho de envio é o que a regra
+  proíbe. Se alguém conseguir enviar algo que a aplicação reprovaria, a
+  unifying invariant está quebrada e o produto passou a ser uma ferramenta de
+  spam.
+- **Nunca** re-enfileirar um envio preso em `enviando`. Um envio cujo `claimed_at`
+  expirou passa a `falhado` com os contadores parciais. Re-enfileirar reenvia a
+  quem já recebeu, e a pessoa não pediu uma segunda vez.
+- **Nunca** afrouxar os limites anti-abuso para simplificar uma implementação.
+  Teto de destinatários por lista, teto de confirmações pendentes, cooldown por
+  endereço: são o que separa "envio em massa para quem pediu" de "envio em massa
+  para quem calhou". São feature, não um detalhe de implementação.
+- **Nunca** persistir email colado no `analyzer/`. É spam alheio; a não
+  persistência é deliberada e está escrita em `analyzer/routes.py:8`.
 
 ---
 
@@ -140,10 +187,22 @@ make verify    # lê os critérios do ticket. NÃO é um gate — diz isso na sa
 
 ## Stable Context (recarregar em cada sessão)
 
+Sete documentos. Todos são de leitura obrigatória: em 2026-10-02 o
+`aes-narrative` mediu uma taxa de omissão de 29%, e os dois que faltavam eram
+exactamente os que mais importavam ler.
+
 - Este ficheiro (`CLAUDE.md`)
 - `docs/VISION.md` — o problema e os limites honestos
-- `docs/REQUIREMENTS.md` — o que está `VERIFICADO` e porquê
+- `docs/REQUIREMENTS.md` — o que está `IMPLEMENTADO`, o que está `VERIFICADO`
+  e porquê. **Hoje são 67 claims `IMPLEMENTADO` e zero `VERIFICADO`.**
+- `docs/ROADMAP.md` — o que está em cada sprint, e a tabela de **decisões
+  revertidas**. Sem este ficheiro ninguém sabe que o Non-Goal de "não envia"
+  foi invertido a 2026-10-02, e um agente work from o `CLAUDE.md` chega ao
+  caminho de envio a inventar a história.
+- `docs/PERSONAS.md` — quem usa isto. A Persona 4 foi escrita por um agente e
+  está assinalada como hipótese; ler a nota antes de a tratar como evidência.
 - `docs/DESIGN.md` — tokens e a invariante cabeçalho == rodapé
+- `aes/kanban.md` — estado real, e a dívida conhecida que ninguém resolveu
 - `aes/kanban.md` — estado do projecto
 - `aes/handoffs/` — se retomar trabalho interrompido
 

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block titulo %}Inscrição cancelada — mailutils{% endblock %}
+
+{% block conteudo %}
+<h1>Inscrição cancelada</h1>
+
+{% if lista %}
+<p>
+  O endereço deixou de estar inscrito em <strong>{{ lista.name }}</strong> e não
+  vai receber mais mensagens desta lista.
+</p>
+{% else %}
+<p>A inscrição foi cancelada e não vai receber mais mensagens.</p>
+{% endif %}
+
+<p class="muted">
+  Se foi engano, peça ao dono da lista para o voltar a acrescentar: a partir de
+  agora precisa de confirmar de novo.
+</p>
+{% endblock %}

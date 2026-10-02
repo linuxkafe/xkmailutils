@@ -1,0 +1,243 @@
+# Island graph — as claims que a revisão de 2026-10-02 falsificou
+#
+# Este ficheiro é a generalização do que a revisão encontrou. Os quatro BLOCKER
+# não eram quatro bugs: eram quatro **afirmações** que o código não sustentava,
+# escritas com a certeza de quem fez o trabalho. Um ficheiro que as lista com a
+# evidência que as mede é a diferença entre "corrigi o bug" e "o sistema sabe
+# que o bug existe".
+#
+# ## Porque não há Z3 aqui
+#
+# `aes-epistemics` propõe `make gmif-check` com o Z3 a resolver `logical_form`.
+# Não foi ligado, e a razão está em `NFR-10`: dependências novas são zero, e o
+# Z3 é uma dependência nova. Houve uma segunda razão, que é mais séria.
+#
+# Estas claims não são tautologias lógicas. "Se `confirmed_at IS NULL`, ninguém
+# recebe" não é uma fórmula que o Z3 refute — é uma afirmação sobre **o que o
+# código faz**, e o código responde-se com uma mutação: trocar a condição por
+# `1=1` e ver se os testes ficam vermelhos. A M-18 é isso, e é mais forte do que
+# um solver: não prova que o código satisfaz a fórmula, prova que **os testes
+# detectam quando deixa de satisfazer**. Um UNSAT aqui provaria que a
+# codificação está certa, não que o produto está.
+#
+# A validação externa — correr o comando e ver o resultado — é a que se usa.
+# `validation_type: human` é o que sobra, e é honesto: nenhuma máquina neste
+# projecto abre um email num Thunderbird.
+#
+# `scripts/epistemics-check.sh` corre isto. Não entra em `make check` porque
+# `mutation-check` lá está e faz o mesmo trabalho por mutação; duplicar o custo
+# não compra cobertura.
+
+nodes:
+  - id: INV-01
+    kind: claim
+    category: 1-axiomatic
+    state: SUPPORTED
+    validation_type: external
+    validation_confidence: 0.97
+    extraction_confidence: 0.99
+    logical_form: "enviar(e) -> confirmado(e) AND nao_descadenciado(e)"
+    statement: >-
+      Nenhum endereço por confirmar ou cancelado entra num envio. Nenhum caminho.
+    anchor: "src/mailutils/lists/service.py::destinatarios"
+    evidence: "M-18 em scripts/run-mutations.py — AND confirmed_at IS NOT NULL -> AND 1=1"
+    falsified_by: "M-18 sobrevive, ou uma segunda função a devolver destinatários aparecer"
+    last_verified: "2026-10-02T13:00:00Z"
+    tickets: [T014]
+
+  - id: INV-02
+    kind: claim
+    category: 1-axiomatic
+    state: SUPPORTED
+    validation_type: external
+    validation_confidence: 0.97
+    extraction_confidence: 0.99
+    logical_form: "confirmar(a) -> possui_token(a) AND codigo(a) == True"
+    statement: >-
+      Confirmar uma inscrição exige o token assinado do link e o código de 6
+      dígitos. O token impede PLAY de um endereço; o código impede FORJAR de um.
+    anchor: "src/mailutils/lists/routes.py::formulario_confirmar"
+    evidence: "M-20 em scripts/run-mutations.py — a comparação de address_id desaparece"
+    falsified_by: "M-20 sobrevive"
+    last_verified: "2026-10-02T13:00:00Z"
+    tickets: [T014]
+
+  - id: INV-03
+    kind: claim
+    category: 2-conditioned
+    state: SUPPORTED
+    validation_type: external
+    validation_confidence: 0.95
+    extraction_confidence: 0.99
+    logical_form: "confirmar(a) -> nao_listado(l) OR token(a,l) == True"
+    statement: >-
+      O link de confirmação leva a lista dentro do payload assinado. Um link da
+      lista A não abre a rota da lista B.
+    anchor: "src/mailutils/web.py::verificar_link"
+    evidence: "M-22 em scripts/run-mutations.py — a comparação de list_id desaparece"
+    falsified_by: "M-22 sobrevive"
+    note: >-
+      Defence em profundidade que o esquema actual torna **inalcançável por
+      HTTP**: `list_addresses.id` é AUTOINCREMENT e único na tabela, e o mesmo
+      email em duas listas tem ids diferentes. Por isso a prova é da função e
+      não da rota — ver `test_o_token_da_lista_a_nao_verifica_na_lista_b`.
+    last_verified: "2026-10-02T13:00:00Z"
+    tickets: [T014]
+
+  - id: INV-04
+    kind: claim
+    category: 1-axiomatic
+    state: SUPPORTED
+    validation_type: external
+    validation_confidence: 0.97
+    extraction_confidence: 0.99
+    logical_form: "repor(a) -> confirmado(a) == False"
+    statement: >-
+      Repor uma inscrição cancelada limpa `confirmed_at` e envia código novo. O
+      dono da lista pode disparar o pedido; não pode confirmar por outrem.
+    anchor: "src/mailutils/lists/service.py::repor_inscricao"
+    evidence: "M-21 em scripts/run-mutations.py — confirmed_at = NULL sai"
+    falsified_by: "M-21 sobrevive"
+    last_verified: "2026-10-02T13:00:00Z"
+    tickets: [T014]
+
+  - id: INV-05
+    kind: claim
+    category: 2-conditioned
+    state: SUPPORTED
+    validation_type: external
+    validation_confidence: 0.94
+    extraction_confidence: 0.97
+    logical_form: "importar(c) -> confirma_alguem(c) == False"
+    statement: >-
+      Importar uma lista de endereços não confirma ninguém. A confirmação é um
+      acto separado e explícito.
+    anchor: "src/mailutils/lists/service.py::importar_csv"
+    evidence: >-
+      tests/test_lists.py::TestInvarianteCentral::test_ter_o_codigo_nao_chega_a_ser_destinatario
+    falsified_by: "um caminho de importação que escreva confirmed_at"
+    last_verified: "2026-10-02T13:00:00Z"
+    tickets: [T014]
+
+  - id: INV-06
+    kind: claim
+    category: 2-conditioned
+    state: SUPPORTED
+    validation_type: external
+    validation_confidence: 0.93
+    extraction_confidence: 0.97
+    logical_form: "estrutura(l) -> chega_ao_html(l)"
+    statement: >-
+      A estrutura escolhida pelo utilizador chega ao HTML exportado. A interface
+      marca a escolha, o formulário envia, a coluna grava — e o email tem de
+      sair com a estrutura escolhida.
+    anchor: "src/mailutils/signatures/renderer.py::render_html"
+    evidence: "M-16 em scripts/run-mutations.py — o layout deixa de ser lido"
+    falsified_by: "M-16 sobrevive"
+    last_verified: "2026-10-02T13:00:00Z"
+    tickets: [T013]
+
+  - id: INV-07
+    kind: claim
+    category: 1-axiomatic
+    state: SUPPORTED
+    validation_type: external
+    validation_confidence: 0.99
+    extraction_confidence: 0.99
+    logical_form: "render(stack) == golden(01ee2f1)"
+    statement: >-
+      `stack` produz byte a byte o HTML que produzia antes do T013.
+    anchor: "tests/golden/stack.html"
+    evidence: >-
+      M-23 em scripts/run-mutations.py — `display:inline-block` passa a
+      `display:inline`. É a mutação de um byte que passava com 744 testes
+      verdes.
+    falsified_by: "M-23 sobreviver"
+    note: >-
+      Esta claim esteve `FALSIFIED` e classificada como `human`, e ambas as
+      coisas estavam erradas. Não precisava de olhos: precisava de um HTML
+      dourado, e o `human-validation.sh` não o produz. A classificação
+      `validation_type` é uma afirmação sobre **quem pode fechar** uma claim —
+      dizer que só uma pessoa pode fechar é dizer que a máquina não pode, e
+      nesse caso a máquina não pode porque o fecho não foi escrito. Escrever o
+      fecho muda a classificação.
+    last_verified: "2026-10-02T13:50:00Z"
+    tickets: [T013]
+
+  - id: INV-08
+    kind: claim
+    category: 3-contingent
+    state: SUPPORTED
+    validation_type: external
+    validation_confidence: 0.90
+    extraction_confidence: 0.85
+    logical_form: "sending_enabled == True -> postal_address != ''"
+    statement: >-
+      Com o envio ligado em produção, o arranque é recusado sem endereço postal
+      do remetente. A NFR-17 é verificável, não decorativa.
+    anchor: "src/mailutils/config.py::load_settings"
+    evidence: >-
+      tests/test_lists.py::TestBypassDeConsentimento e o ConfigError de
+      `MAILUTILS_SENDING_ENABLED=1` sem `MAILUTILS_SENDER_POSTAL_ADDRESS`
+    falsified_by: "load_settings deixar de levantar ConfigError nesse caso"
+    note: >-
+      `extraction_confidence` a 0.85 porque a suficiência **jurídica** não é
+      verificável por máquina nem por mim. O que o código garante é que a
+      exigência existe. Ver NFR-17.
+    last_verified: "2026-10-02T13:00:00Z"
+    tickets: [T014]
+
+  - id: INV-09
+    kind: claim
+    category: 3-contingent
+    state: UNKNOWN
+    validation_type: human
+    validation_confidence: 0.30
+    extraction_confidence: 0.40
+    logical_form: None
+    statement: >-
+      A Persona 4 (Marta, que envia para ~150 pessoas) representa a pessoa real
+      para quem o caminho de envio foi construído.
+    anchor: "docs/PERSONAS.md::Persona 4"
+    evidence: >-
+      Nenhuma. A persona foi escrita por um agente para satisfazer a regra de
+      `ROADMAP.md` — *"um item só entra em `planeado` depois de existir uma
+      Persona a precisar dele"* — depois de o dono decidir inverter o Non-Goal.
+      O próprio ficheiro diz isso.
+    falsified_by: >-
+      Uma pessoa real dizer que não é o caso. É o passo [7] do
+      `human-validation.sh`.
+    close_condition: >-
+      Alguém que não seja o autor e que use o produto responder à pergunta. Até
+      lá, FR-6/7/8 estão dimensionadas para um caso suposto e isso é dívida
+      declarada, não pressuposto confirmado.
+    last_verified: "2026-10-02T13:00:00Z"
+    tickets: [T014, T015, T016]
+
+  - id: INV-10
+    kind: claim
+    category: 2-conditioned
+    state: UNKNOWN
+    validation_type: human
+    validation_confidence: 0.25
+    extraction_confidence: 0.60
+    logical_form: None
+    statement: >-
+      As 28 combinações de tema × estrutura apresentam-se legíveis num cliente de
+      email real.
+    anchor: "src/mailutils/signatures/renderer.py"
+    evidence: >-
+      Nenhuma. Os testes provam table-based, estilos inline e contraste 4.5:1.
+      Não provam que o Outlook não deforme a moldura — e nenhum script deste
+      projecto abre um email num Thunderbird.
+    falsified_by: "alguém abrir um .html exportado num Thunderbird e num Outlook"
+    close_condition: "passo [4] do human-validation.sh, executado por alguém que não seja o autor"
+    last_verified: "2026-10-02T13:00:00Z"
+    tickets: [T013]
+
+edges:
+  - {type: implies, from: [INV-01], to: INV-05, note: "importar não confirma é o que garante que só os confirmados entram"}
+  - {type: implies, from: [INV-02], to: INV-01, note: "sem token nem código, INV-01 é o único filtro"}
+  - {type: implies, from: [INV-03], from_note: "confirma o âmbito", to: INV-02}
+  - {type: contradicts, from: [INV-07], to: [INV-06], note: "INV-06 diz que a estrutura chega; INV-07 diz que a estrutura anterior não mudou de forma verificável"}
+  - {type: depends_on, from: [INV-08], to: [INV-01], note: "enviar exige remetente identificável, e enviar é o que usa INV-01"}

@@ -83,9 +83,21 @@ IN_SECTION=0
 CRITERIA_FILE=$(mktemp)
 trap 'rm -f "$CRITERIA_FILE"' EXIT
 
+# A secção é procurada em português **e** em inglês.
+#
+# Não é uma folga: o projecto é pt-PT — o `docs-check` do `Makefile` exige
+# headings em português, e a interface é pt-PT por `FR-5.4`. Os primeiros
+# tickets escreveram `## Acceptance Criteria` por causa deste script, e o
+# resultado foi um repositório com um ticket em inglês e os seguintes em
+# português — e este script a dizer "0 critérios encontrados" num ticket com
+# sete, que é um falso-verde da mesma família que o `C-11` da rubrica T014.
+#
+# Aceitar a língua do projecto **estreenxe o gate**: os critérios continuam a
+# ser contados e os continuados a falhar. O que muda é o gate deixar de medir
+# zero porque não soube ler o título.
 while IFS= read -r line; do
 	case "$line" in
-	*"Acceptance Criteria"*)
+	*"Acceptance Criteria"*|*"Critérios de aceitação"*|*"Critérios de Aceitação"*)
 		IN_SECTION=1
 		continue
 		;;

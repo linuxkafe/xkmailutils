@@ -120,6 +120,56 @@ que o utilizador carrega.
 A cor **nunca** é a única pista: cada nível tem também um rótulo textual e um
 ícone em texto (`[OK]`, `[!]`, `[!!]`, `[X]`), para não depender de perceção de cor.
 
+## Temas e estruturas da assinatura
+
+Ao contrário dos tokens da aplicação, os temas da assinatura **não** vivem em
+`app.css`: o HTML que sai vai para um cliente de email, e o CSS da aplicação não
+chega lá. Vivem em `signatures/renderer.py`, e este quadro é a cópia de
+referência — `tests/test_editor_flows.py` e `tests/test_renderer.py` comparam os
+dois lados.
+
+### Temas (paleta)
+
+Sete paletas. As três primeiras já existiam antes do T013; as outras foram
+escolhidas a calcular contraste, não a olho — ver a nota abaixo do quadro.
+
+| Chave | Nome | Fundo | Texto | Suave | Acento | Borda |
+|---|---|---|---|---|---|---|
+| `dark` | Escuro | `#1a1a1a` | `#f0f0f0` | `#b0b0b0` | `#F8B400` | `#3a3a3a` |
+| `light` | Claro | `#ffffff` | `#212121` | `#555555` | `#0056b3` | `#e0e0e0` |
+| `graphite` | Grafite | `#101317` | `#f2f4f7` | `#b3bcc9` | `#7cb8ff` | `#2a3038` |
+| `navy` | Azul escuro | `#0d1b2a` | `#eef3f8` | `#aec4d9` | `#ffd166` | `#1b3348` |
+| `forest` | Verde escuro | `#0e1f17` | `#eaf4ee` | `#a9c6b6` | `#8fd694` | `#1d3a2b` |
+| `paper` | Papel | `#ffffff` | `#2b2620` | `#5f574c` | `#9a3412` | `#ddd6c9` |
+| `slate` | Ardósia | `#ffffff` | `#1f2933` | `#52606d` | `#0b5c8a` | `#d5dde3` |
+
+**Toda a tabela passa 4.5:1 para `text` e `muted`, no fundo que sai no HTML.**
+Um tema escuro tem de levar o seu fundo (`_precisa_de_fundo`, por luminância e
+não por nome); um tema claro fica transparente de propósito, e por isso o fundo
+contra o qual o contraste é medido é o branco do cliente, não o `#ffffff`
+declarado. `tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail` está
+parametrizado sobre `sorted(THEMES)`, portanto **um tema novo entra no gate sem
+que ninguém escreva um teste novo** — e é por isso que as cores se escolheram por
+cálculo e não a olho.
+
+### Estruturas (forma)
+
+| Chave | Nome | O que muda |
+|---|---|---|
+| `stack` | Vertical | O original. Identidade e contactos empilhados ao lado do logótipo. |
+| `compact` | Compacto | Duas linhas. Logótipo de 40 px alinhado ao meio. |
+| `columns` | Duas colunas | Identidade em cima, contactos repartidos. A segunda coluna só existe se houver conteúdo para ela. |
+| `boxed` | Com moldura | Vertical dentro de `border:1px solid` + `border-radius:8px`, **visível nos temas claros**. |
+
+Tema e estrutura são ortogonais: 7 × 4 = 28 combinações. `tests/test_renderer.py`
+parametriza as invariantes de estrutura (`table-based`, tabelas equilibradas,
+marcador no fim, escaping) sobre o produto cartesiano, porque são 28 HTMLs
+diferentes a entrar em emails de clientes reais.
+
+`border-radius` no email não é fiável — o Word engine do Outlook não faz
+cantos arredondados. É degradação progressiva: onde não há cantos arredondados
+há uma moldura recta, que é o que se queria.
+
 ## Componentes
 
 | Componente | Estados | Tokens |

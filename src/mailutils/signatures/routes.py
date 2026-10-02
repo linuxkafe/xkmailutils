@@ -66,12 +66,20 @@ def editor(request: Request, conn: Db, session: Active) -> Response:
         "clientes": _CLIENTS,
         "instrucoes": {c: renderer.client_instructions(c) for c in _CLIENTS},
         "saved": signature is not None,
+        "estruturas": renderer.LAYOUTS,
         "tema_assinatura": (signature["theme"] if signature else renderer.DEFAULT_THEME),
+        "estrutura_assinatura": (signature["layout"] if signature else renderer.DEFAULT_LAYOUT),
     }
     # Mesmo sem assinatura guardada, o preview e o score são calculados: o
     # utilizador vê de imediato o que o score faz com um HTML vazio, e isso
     # ensina-o a ler o número antes de o ver subir.
-    built = _build(settings, context["fields"], context["tema_assinatura"], context["logo"])
+    built = _build(
+        settings,
+        context["fields"],
+        context["tema_assinatura"],
+        context["logo"],
+        context["estrutura_assinatura"],
+    )
     context.update(built)
     return page(request, "editor.html", context)
 
@@ -137,6 +145,7 @@ async def preview(
     csrf_token: Annotated[str, Form()] = "",
     fields: Annotated[str, Form()] = "",
     theme: Annotated[str, Form()] = "dark",
+    layout: Annotated[str, Form()] = renderer.DEFAULT_LAYOUT,
 ) -> Response:
     """Recalcula o HTML e o score sem recarregar a página.
 
@@ -157,6 +166,7 @@ async def preview(
         _form_fields(fields),
         theme,
         _load_logo(settings, conn, signature),
+        layout,
     )
     return Response(
         content=_json(built),
@@ -173,6 +183,7 @@ async def save(
     csrf_token: Annotated[str, Form()] = "",
     fields: Annotated[str, Form()] = "",
     theme: Annotated[str, Form()] = "dark",
+    layout: Annotated[str, Form()] = renderer.DEFAULT_LAYOUT,
     logo_id: Annotated[int, Form()] = 0,
 ) -> Response:
     if not csrf_is_valid(session, csrf_token):
@@ -186,14 +197,24 @@ async def save(
         # explícita, com a sua própria rota.
         conn.execute(
             "INSERT INTO signatures"
-            " (user_id, name, theme, fields_json, logo_id, created_at, updated_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)"
+            " (user_id, name, theme, layout, fields_json, logo_id, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
             " ON CONFLICT (user_id, name) DO UPDATE SET"
             " theme = excluded.theme,"
+            " layout = excluded.layout,"
             " fields_json = excluded.fields_json,"
             " logo_id = COALESCE(excluded.logo_id, signatures.logo_id),"
             " updated_at = excluded.updated_at",
-            (session.user_id, SIGNATURE_NAME, theme, dumps_fields(data), logo_id or None, now, now),
+            (
+                session.user_id,
+                SIGNATURE_NAME,
+                theme,
+                layout,
+                dumps_fields(data),
+                logo_id or None,
+                now,
+                now,
+            ),
         )
     return ir(request, "/assinatura?aviso=guardada")
 
@@ -264,11 +285,19 @@ async def upload_logo(
         # HTML exportado.
         conn.execute(
             "INSERT INTO signatures"
-            " (user_id, name, theme, fields_json, logo_id, created_at, updated_at)"
-            " VALUES (?, ?, ?, '{}', ?, ?, ?)"
+            " (user_id, name, theme, layout, fields_json, logo_id, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, '{}', ?, ?, ?)"
             " ON CONFLICT (user_id, name) DO UPDATE SET"
             " logo_id = excluded.logo_id, updated_at = excluded.updated_at",
-            (session.user_id, SIGNATURE_NAME, renderer.DEFAULT_THEME, logo_id, now, now),
+            (
+                session.user_id,
+                SIGNATURE_NAME,
+                renderer.DEFAULT_THEME,
+                renderer.DEFAULT_LAYOUT,
+                logo_id,
+                now,
+                now,
+            ),
         )
     return ir(request, f"/assinatura?aviso={notice}")
 
@@ -339,6 +368,7 @@ def _export(request: Request, conn: sqlite3.Connection, session: Session, kind: 
         signature["fields"],
         signature["theme"],
         _load_logo(settings, conn, signature),
+        signature["layout"],
     )
     html, plain, report = built["html"], built["plain"], built["score"]
     if report["exportacao_bloqueada"]:
@@ -441,6 +471,7 @@ def _build(
     data: dict[str, str],
     theme: str,
     logo: dict[str, Any] | None,
+    layout: str = renderer.DEFAULT_LAYOUT,
 ) -> dict[str, Any]:
     """Pipeline único de construção: dados → HTML → texto → score.
 
@@ -451,6 +482,7 @@ def _build(
     payload = dict(data)
     payload["logo_url"] = (logo or {}).get("url", "")
     payload["theme"] = theme
+    payload["layout"] = layout
     built = renderer.build_signature_data(payload, settings)
     html = renderer.render_html(built, settings)
     plain = renderer.render_plain(built, settings)
@@ -471,6 +503,7 @@ def _load_signature(conn: sqlite3.Connection, user_id: int) -> dict[str, Any] | 
     return {
         "id": row["id"],
         "theme": row["theme"],
+        "layout": row["layout"],
         "logo_id": row["logo_id"],
         "fields": loads_fields(row["fields_json"]),
     }

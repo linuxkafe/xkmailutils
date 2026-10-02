@@ -15,7 +15,7 @@ from typing import Any
 
 from fastapi import Request
 from fastapi.responses import RedirectResponse, Response
-from itsdangerous import URLSafeTimedSerializer
+from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from . import security
 from .config import Settings
@@ -29,6 +29,21 @@ THEME_COOKIE = "mailutils_theme"
 #: assinado num contexto possa ser reapresentado no outro.
 SESSION_SALT = "mailutils-session-v1"
 CSRF_SALT = "mailutils-csrf-v1"
+
+#: Salts dos tokens de **propósito** — os que vivem num link e não numa sessão.
+#:
+#: São salts separados, e não o CSRF reutilizado, por uma razão que só aparece
+#: quando alguém tenta reuse: o `purpose` vai dentro do payload assinado. Um
+#: token de confirmação carrega `("confirmar", address_id)` e um de descadencia
+#: carrega `("descadenciar", address_id)`. Verificar o propósito errado falha,
+#: porque o payload não bate — mesmo que os dois tokens usem o mesmo segredo.
+LINK_SALT_CONFIRM = "mailutils-confirmar-lista-v1"
+LINK_SALT_UNSUBSCRIBE = "mailutils-descadenciar-lista-v1"
+
+#: Os dois propósitos que viajam dentro do payload assinado. Se amanhã houver um
+#: terceiro link, ganha o seu valor e o seu salt — não se reutiliza um destes.
+PURPOSE_CONFIRM = "confirmar"
+PURPOSE_UNSUBSCRIBE = "descadenciar"
 
 
 class _Redirect(Exception):
@@ -138,6 +153,73 @@ def clear_session_cookie(response: Response, settings: Settings) -> None:
 
 def _csrf_serializer(settings: Settings) -> URLSafeTimedSerializer:
     return URLSafeTimedSerializer(settings.secret_key, salt=CSRF_SALT)
+
+
+# --------------------------------------------------------------------------
+# Tokens de link: confirmação e descadência
+# --------------------------------------------------------------------------
+#
+# São as duas acções que o **destinatatário** faz sem ter sessão — porque não
+# tem conta. Sem sessão não há CSRF de sessão, e sem CSRF de sessão a rota teria
+# de confiar no `address_id` do caminho, que é adivinhável: enumerar inteiros dá
+# qualquer email da instalação.
+#
+# O link carrega por isso um token assinado com o segredo da instalação e um
+# `max_age` igual ao do OTP. Sem o token, `address_id` não chega. Com o token de
+# outra pessoa, `address_id` não chega — porque o `address_id` está dentro do
+# payload assinado e não é lido do caminho.
+#
+# `MAILUTILS_UNSUBSCRIBE_TOKEN_DAYS` é mais longo que o OTP de propósito: uma
+# pessoa que se descadencia no primeiro dia e se arrepende no vigésimo quinto tem
+# de conseguir voltar atrás. Ver `NFR-17` sobre o que isto **não** garante.
+
+
+def assinar_link(settings: Settings, purpose: str, list_id: int, address_id: int, salt: str) -> str:
+    """Token assinado para um link de propósito, com lista e endereço dentro.
+
+    A lista vai dentro por uma razão concreta: sem ela, um link válido da lista
+    A aceitava a mesma rota apontada à lista B. Com `address_id` filtrado pela
+    lista isso daria `None`, mas só por acidente do esquema — e um esquema que
+    é seguro por acidente não é um esquema.
+    """
+    return URLSafeTimedSerializer(settings.secret_key, salt=salt).dumps(
+        {"p": purpose, "l": list_id, "a": address_id}
+    )
+
+
+def verificar_link(
+    settings: Settings,
+    purpose: str,
+    list_id: int,
+    address_id: int,
+    token: str | None,
+    salt: str,
+    max_age_seconds: int,
+) -> bool:
+    """Confere o token **e** que `address_id` é o que está assinado.
+
+    Confere `list_id` e `address_id` assinados contra os do caminho precisamente
+    porque essa é a propriedade que dá sentido ao token: sem esta comparação, um
+    token válido de uma pessoa confirmaria o endereço de outra, que é o mesmo bug
+    que o token veio evitar.
+
+    Levanta `BadSignature` para qualquer falha — assinatura, propósito, prazo.
+    Devolve `bool` porque nenhuma rota precisa de saber *qual* das três falhou.
+    """
+    if not token:
+        return False
+    try:
+        dados = URLSafeTimedSerializer(settings.secret_key, salt=salt).loads(
+            token, max_age=max_age_seconds
+        )
+    except BadSignature:
+        return False
+    return (
+        isinstance(dados, dict)
+        and dados.get("p") == purpose
+        and dados.get("l") == list_id
+        and dados.get("a") == address_id
+    )
 
 
 def open_session(

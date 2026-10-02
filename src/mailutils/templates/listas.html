@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block titulo %}Listas — mailutils{% endblock %}
+
+{% block conteudo %}
+<h1>Listas de destinatários</h1>
+
+<p class="muted">
+  Uma lista só envia para quem confirmou a inscrição por código. Importar
+  endereços <strong>não</strong> confirma ninguém — a confirmação é um acto
+  separado, e a diferença entre os dois é o que separa uma lista de contactos
+  de uma lista de spam.
+</p>
+
+{% if aviso_chave %}<p class="aviso" role="status">{{ mensagens[aviso_chave] }}</p>{% endif %}
+{% if erro_chave %}<p class="erro" role="alert">{{ mensagens[erro_chave] }}</p>{% endif %}
+{% if erro_chave == 'importacao' or erro_chave == 'lista' %}
+  {% if detalhe %}<p class="erro" role="alert">{{ detalhe }}</p>{% endif %}
+{% endif %}
+
+<div class="card">
+  <h2>Nova lista</h2>
+  <form method="post" action="{{ raiz }}/listas" class="grid grid--form">
+    <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
+    <label for="nome-lista">Nome da lista</label>
+    <input type="text" id="nome-lista" name="nome" maxlength="80" required>
+    <button type="submit" class="btn btn--primary">Criar lista</button>
+  </form>
+</div>
+
+{% if listas %}
+<div class="card">
+  <h2>As suas listas</h2>
+  <table class="tabela">
+    <caption class="visually-hidden">Listas de destinatários e contagens</caption>
+    <thead>
+      <tr><th scope="col">Lista</th><th scope="col">Confirmados</th>
+      <th scope="col">Por confirmar</th><th scope="col">Total</th></tr>
+    </thead>
+    <tbody>
+      {% for l in listas %}
+      <tr>
+        <th scope="row"><a href="{{ raiz }}/listas/{{ l.id }}">{{ l.name }}</a></th>
+        <td>{{ l.confirmados }}</td>
+        <td>{{ l.pendentes }}</td>
+        <td>{{ l.total }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="muted">Ainda não tem listas.</p>
+{% endif %}
+
+<p class="muted small">
+  Teto de {{ teto }} endereços por lista. {{ pendentes }} confirmações
+  pendentes, com um teto de {{ teto_pendentes }}.
+</p>
+{% endblock %}

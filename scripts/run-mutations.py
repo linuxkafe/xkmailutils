@@ -29,7 +29,6 @@ from dataclasses import dataclass
 RAIZ = pathlib.Path(__file__).resolve().parent.parent
 SAIDA = RAIZ / "aes" / "tickets" / "T008-mutations.md"
 
-
 @dataclass(frozen=True)
 class Mutacao:
     """Uma alteração que, se passar, o gate tem de dizer que é mentira."""
@@ -42,13 +41,12 @@ class Mutacao:
     porque: str
     tickets: tuple[str, ...]
 
-
 MUTACOES: tuple[Mutacao, ...] = (
     Mutacao(
         "M-01",
         "src/mailutils/signatures/renderer.py",
-        "    opaco = _precisa_de_fundo(theme)",
-        "    opaco = False  # MUTACAO M-01",
+        "        opaco = _precisa_de_fundo(self.theme)",
+        "        opaco = False  # MUTACAO M-01",
         ("python3", "-m", "pytest", "tests/test_renderer.py", "-q", "--no-cov", "-k", "Legivel"),
         "O tema escuro volta a não levar o fundo: texto #f0f0f0 sobre o branco do "
         "cliente dá 1.14:1 e a assinatura fica invisível. Era o F-02.",
@@ -57,8 +55,8 @@ MUTACOES: tuple[Mutacao, ...] = (
     Mutacao(
         "M-02",
         "src/mailutils/signatures/renderer.py",
-        'f"{cor_tabela} "',
-        "",
+'            f\'{cor_tabela} style="{estilo}">\'',
+        '            \'style="{estilo}">\'',
         ("python3", "-m", "pytest", "tests/test_renderer.py", "-q", "--no-cov", "-k", "Legivel"),
         "Fica o `background` no `<div>` mas sai o `bgcolor` do `<table>`. O Word "
         "engine do Outlook ignora `background` num div, pelo que a assinatura "
@@ -247,8 +245,162 @@ MUTACOES: tuple[Mutacao, ...] = (
         "aquele cabeçalho pertence só à mensagem. (F-17)",
         ("F-17",),
     ),
-)
+    Mutacao(
+        "M-16",
+        "src/mailutils/signatures/renderer.py",
+        "    render = _RENDERERS.get(data.layout, _render_stack)",
+        "    render = _RENDERERS[DEFAULT_LAYOUT]",
+        (
+            "python3",
+            "-m",
+            "pytest",
+            "tests/test_renderer.py",
+            "tests/test_editor_flows.py",
+            "-q",
+            "--no-cov",
+        ),
+        "A escolha da estrutura deixa de ser lida e todas renderizam vertical. "
+        "O selector da interface continua a marcar a estrutura escolhida, o campo "
+        "escondido continua a ir no formulário, e a coluna `layout` continua a "
+        "gravar o que o utilizador escolheu — a falha só aparece no email. É o "
+        "T013 inteiro a partir-se sem um único sintoma na interface.",
+        ("F-03",),
+    ),
 
+    Mutacao(
+        "M-17",
+        "src/mailutils/signatures/renderer.py",
+        '        muted="#aec4d9",',
+        '        muted="#2a3f52",',
+        ("python3", "-m", "pytest", "tests/test_renderer.py", "-q", "--no-cov", "-k", "Legivel"),
+        "O `muted` do tema `navy` passa de 9.69:1 para 1.6:1 sobre o seu próprio "
+        "fundo. Cargo, empresa e morada tornam-se ilegíveis. Esta mutação prova "
+        "que os temas novos do T013 entram no gate de contraste **sem** que "
+        "ninguém escreva um teste novo: `TestAssinaturaLegivelNoClienteDeEmail` "
+        "está parametrizado sobre `sorted(THEMES)`. Foi o que permitiu escolher "
+        "as cores a calcular em vez de a olho.",
+        ("F-03",),
+    ),
+    Mutacao(
+        "M-18",
+        "src/mailutils/lists/service.py",
+        '            "   AND confirmed_at IS NOT NULL"',
+        '            "   AND 1=1"',
+        (
+            "python3",
+            "-m",
+            "pytest",
+            "tests/test_lists.py",
+            "-q",
+            "--no-cov",
+            "-k",
+            "InvarianteCentral",
+        ),
+        "A unica clausula que separa uma lista de contactos de um relay de email "
+        "bombing passa a ser `1=1`. Todos os pendentes — os que receberam um "
+        "codigo de confirmacao e nunca responderam — entram no envio. O produto "
+        "passa a enviar para quem nao pediu, usando o endereco de outra pessoa "
+        "como remetente. E a mutacao que o `CLAUDE.md` proibe em letras: "
+        "`confirmed_at IS NULL` nao entra no SELECT, em nenhum caminho.",
+        ("F-01",),
+    ),
+    Mutacao(
+        "M-19",
+        "src/mailutils/lists/service.py",
+        '        if ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations:',
+        '        if ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations + 10**6:',
+        ("python3", "-m", "pytest", "tests/test_lists.py", "-q", "--no-cov", "-k", "AntiAbuso"),
+        "O tecto de confirmacoes por confirmar deixa de existir. Um utilizador "
+        "com sessao importa cinquenta mil enderecos e pede os codigos todos de "
+        "uma vez. E o tecto anti-abuso que o `CLAUDE.md` diz ser feature e nao "
+        "detalhe de implementacao.",
+        ("F-01",),
+    ),
+    Mutacao(
+        "M-20",
+        "src/mailutils/web.py",
+        '        and dados.get("a") == address_id',
+        '        and dados.get("a") is not None  # MUTACAO M-20',
+        (
+            "python3",
+            "-m",
+            "pytest",
+            "tests/test_lists.py",
+            "-q",
+            "--no-cov",
+            "-k",
+            "LinkAssinado",
+        ),
+        "A verificacao de posse do token desaparece: o `address_id` deixa de ser "
+        "comparado com o do payload assinado. O link de Ana passa a confirmar o "
+        "endereco do Bruno. E o B-04 desta mesma revisao, que era a razao de o "
+        "token existir.",
+        ("F-01",),
+    ),
+    Mutacao(
+        "M-21",
+        "src/mailutils/lists/service.py",
+        '            " SET unsubscribed_at = NULL, confirmed_at = NULL,"',
+        '            " SET unsubscribed_at = NULL,"',
+        (
+            "python3",
+            "-m",
+            "pytest",
+            "tests/test_lists.py",
+            "-q",
+            "--no-cov",
+            "-k",
+            "BypassConsentimento",
+        ),
+        "Repor uma inscricao volta a ser `unsubscribed_at = NULL` e mais nada. "
+        "O endereco deixa de estar em `destinatarios()` quando se cancela e "
+        "volta sem ninguem confirmar quando o dono da lista clica em 'Repor'. "
+        "E o M-01: o produto a decidir por quem se cancelou.",
+        ("F-01",),
+    ),
+    Mutacao(
+        "M-22",
+        "src/mailutils/web.py",
+        '        and dados.get("l") == list_id',
+        '        and dados.get("l") is not None  # MUTACAO M-22',
+        (
+            "python3",
+            "-m",
+            "pytest",
+            "tests/test_lists.py",
+            "-q",
+            "--no-cov",
+            "-k",
+            "token_da_lista_a",
+        ),
+        "A lista deixa de estar no token. Um link de confirmacao da lista A passa "
+        "a abrir a rota da lista B. So a seguranca que sobra e a de `address_id` "
+        "estar filtrado por lista — e isso e seguro por acidente do esquema, nao "
+        "por decisao.",
+        ("F-01",),
+    ),
+    Mutacao(
+        "M-23",
+        "src/mailutils/signatures/renderer.py",
+        '            f\'display:inline-block;">\'',
+        '            f\'display:inline;">\'',
+        (
+            "python3",
+            "-m",
+            "pytest",
+            "tests/test_renderer.py",
+            "-q",
+            "--no-cov",
+            "-k",
+            "StackNaoMudou",
+        ),
+        "Muda UMA palavra e portanto alguns bytes do HTML do `stack`. Esta e a "
+        "mutacao que provou que o T013 afirmava 'byte a byte' sem nada que o "
+        "provasse: os 744 testes passavam. Agora morre em "
+        "`tests/golden/stack.html`.",
+        ("F-01",),
+    ),
+)
 
 def correr(mutacao: Mutacao) -> tuple[bool, str]:
     """Aplica a mutação, corre o comando e reverte. Devolve (morreu?, saída)."""
@@ -278,7 +430,6 @@ def correr(mutacao: Mutacao) -> tuple[bool, str]:
     ultimas = [linha for linha in feito.stdout.splitlines() if linha.strip()][-3:]
     resumo = "\n".join(ultimas) or feito.stderr.strip()[-400:]
     return (feito.returncode != 0), f"{resumo}\n    ({duracao:.0f}s)"
-
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
@@ -350,7 +501,6 @@ def main() -> int:
         return 1
     print(f"\n{len(MUTACOES)}/{len(MUTACOES)} mutações detectadas.")
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

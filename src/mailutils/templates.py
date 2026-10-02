@@ -52,6 +52,41 @@ MESSAGENS: dict[str, str] = {
     "vazio": "Guarde a assinatura antes de exportar.",
     # analisador
     "grande": "O conteúdo excede o limite de tamanho.",
+    # listas de destinatários
+    #
+    # `lista` e `email` são o par que mais importa: `email` é o único aviso
+    # que existe entre "escrevi um endereço" e "esse endereço entra num envio".
+    "lista": "Não foi possível criar a lista com esse nome.",
+    "email": "Esse endereço não é válido.",
+    "teto": "A lista chegou ao número máximo de endereços.",
+    # M-09: os dois tectos tinham a mesma chave, e quem batia o de confirmações
+    # era informado de que a lista estava cheia — o que é falso e não diz o que
+    # fazer a seguir.
+    "teto-lista": ("A lista já tem o número máximo de endereços. Crie outra lista."),
+    "teto-confirmacoes": (
+        "Já tem confirmações por confirmar a aguardar resposta. Peça os códigos "
+        "aos endereços que já lá estão e espere pelas respostas — depois volta "
+        "a poder acrescentar mais."
+    ),
+    "duplicado": "Esse endereço já está na lista.",
+    "ficheiro": "Escolha um ficheiro para importar.",
+    "importacao": "Não foi possível importar esse ficheiro.",
+    "selecciona": "Escolha pelo menos um endereço a confirmar.",
+    "confirmacao": "Não foi possível pedir a confirmação.",
+    "lista-inexistente": "Essa lista não existe.",
+    # Confirmação de endereço. `confirmado` é o único caminho em que um
+    # endereço entra num envio, e por isso a mensagem diz o que passou a ser
+    # verdade em vez de ser um "ok".
+    "confirmado": "Endereço confirmado. A partir de agora recebe as mensagens desta lista.",
+    "endereco": "Endereço adicionado, por confirmar.",
+    "removido": "Endereço removido da lista.",
+    "reposto": (
+        "Enviámos um novo código para o endereço. Como a inscrição tinha sido "
+        "cancelada, tem de confirmar de novo para voltar a receber."
+    ),
+    "reposicao": "Esse endereço não tinha a inscrição cancelada.",
+    "token": "Este endereço não é válido para este pedido.",
+    "confirmacao-ok": "Inscrição confirmada.",
     "logotipo": "Escolha um ficheiro de imagem.",
     # convites / convites
     "nao-coincidem": "As palavras-passe novas não coincidem.",

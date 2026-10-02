@@ -14,21 +14,21 @@
 #
 #   1. Descarga o repositório.
 #   2. Verifica o que falta (docker, git) antes de fazer qualquer coisa.
-#   3. Gera um `.env` com segredos aleatórios, se não existir.
+#   3. Gera um '.env' com segredos aleatórios, se não existir.
 #   4. Arranca o contentor.
 #   5. Espera que responda, e diz o endereço.
 #
 # O que este script NÃO faz, e porquê:
 #
-#   * Não instala nginx, Apache, certbot, nem toca em `/etc/`. A aplicação
+#   * Não instala nginx, Apache, certbot, nem toca em '/etc/'. A aplicação
 #     serve-se a si mesma numa porta. Um script que edita configuração do sistema
-#     tem de ser revisto linha a linha antes de correr com `sudo`, e isso
+#     tem de ser revisto linha a linha antes de correr com 'sudo', e isso
 #     anula a vantagem de ser um comando só.
 #   * Não define uma palavra-passe para o administrador. Seria escolhida por
 #     esta máquina, não por quem vai usar a aplicação, e quem a usasse ficaria
 #     sem saber o que era. A aplicação arranca sem administrador e diz isso; o
 #     primeiro arranque faz-se com um comando que está no README.
-#   * Não abre portas de firewall. Numa máquina com firewall, `ufw`/`firewalld`
+#   * Não abre portas de firewall. Numa máquina com firewall, 'ufw'/'firewalld'
 #     não é do contentor para gerir, e desligar um firewall sem perguntar é o
 #     tipo de coisa que um script de instalação não faz.
 
@@ -37,7 +37,7 @@ set -euo pipefail
 REPO="linuxkafe/xkmailutils"
 BRANCH="${XKMAILUTILS_BRANCH:-main}"
 RAIZ="${XKMAILUTILS_DIR:-/opt/xkmailutils}"
-#: Porta em branco = escolher uma livre. Ver `escolher_porta`.
+#: Porta em branco = escolher uma livre. Ver 'escolher_porta'.
 PORTA="${XKMAILUTILS_PORTA:-}"
 #: Candidatas, por ordem de preferência. Nada de 8080: é a porta que meia
 #: dúzia de projectos auto-hospedados usa, e o objectivo de servir a aplicação
@@ -72,6 +72,8 @@ uso: deploy.sh [opções]
   --prefixo CAMINHO  prefixo de path (predefinição /xkmailutils)
   --email-admin E  email do primeiro administrador
   --ramo N         ramo a instalar (predefinição main)
+  --actualizar     numa instalação existente: copia a base, faz git pull e
+                   reconstrói. A base de dados não é tocada.
   --ajuda          este texto
 
 Sem opções, escolhe uma porta livre e instala em
@@ -81,15 +83,15 @@ FIM
 
 # ------------------------------------------------------------------ porta --
 
-# `porta_ocupada` responde se algo está a escutar. Usa o `/dev/tcp` do bash em
-# vez de `ss` ou `netstat` porque o bash já é um requisito do script e `ss` não
+# 'porta_ocupada' responde se algo está a escutar. Usa o '/dev/tcp' do bash em
+# vez de 'ss' ou 'netstat' porque o bash já é um requisito do script e 'ss' não
 # está em todas as máquinas — sobretudo em contentores mínimos, que é onde
 # este script vai correr mais vezes.
 porta_ocupada() {
     (echo >"/dev/tcp/127.0.0.1/$1") >/dev/null 2>&1
 }
 
-# `escolher_porta` devolve a primeira candidata livre. A ordem de tentativa é
+# 'escolher_porta' devolve a primeira candidata livre. A ordem de tentativa é
 # determinística: a mesma máquina dá a mesma porta, o que evita a surpresa de
 # reinstalar e ver a aplicação noutro sítio.
 escolher_porta() {
@@ -103,7 +105,73 @@ escolher_porta() {
     return 1
 }
 
+# ----------------------------------------------------------- actualizar --
+#
+# Sub-comando antes do bloco de argumentos, e antes de pedir root: quem
+# actualiza já tem escrita no directório de instalação.
+#
+# A cópia de segurança vem **primeiro** e é a única parte que não é
+# obviamente correcta. Um 'git pull' seguido de 'up --build' não toca no volume
+# — isso foi medido com um contentor real, ver tests/test_atualizacao.py — mas
+# uma migração mal escrita perdia dados sem apagar nada, e ninguém quer
+# descobrir isso depois de actualizar.
+#
+# O `sqlite3.Connection.backup` e não `cp`: o ficheiro está em WAL, e um `cp`
+# a meio de uma escrita copia a base e o WAL para sítios diferentes. O
+# `backup` produz um ficheiro consistente sem parar o serviço.
+actualizar() {
+    local dir="${1:-$RAIZ}"
+    local carimbo
+    local compose
+
+    [ -d "$dir" ] || falhar "nao ha instalacao em $dir"
+    [ -f "$dir/docker-compose.yml" ] || falhar "$dir nao parece uma instalacao do mailutils"
+
+    if docker compose version >/dev/null 2>&1; then
+        compose="docker compose -C $dir"
+    else
+        compose="docker-compose -f $dir/docker-compose.yml"
+    fi
+
+    passo "Copia de seguranca da base de dados"
+    carimbo=$(date +%Y%m%d-%H%M%S)
+    if ! $compose exec -T mailutils python -c "
+import sqlite3
+a = sqlite3.connect('/data/mailutils.db')
+b = sqlite3.connect('/data/copia.db')
+a.backup(b)
+b.close()
+" >/dev/null 2>&1; then
+        falhar "a copia de seguranca falhou. A actualizacao NAO continua."
+    fi
+    printf "%s  copia feita dentro do volume; a base e consistente%s\n" "$G" "$N"
+
+    passo "git pull"
+    git -C "$dir" pull --ff-only \
+        || falhar "o git pull deu conflito ou falhou. Nada foi reconstruido e a aplicacao continua na versao anterior."
+
+    passo "Reconstruir e arrancar"
+    $compose up -d --build || falhar "'docker compose up -d --build' falhou"
+
+    printf "\n%s  Actualizado.%s\n" "$G" "$N"
+    printf "  A base de dados e a lista de destinatarios sao as mesmas: o volume\n"
+    printf "  'dados' nao e tocado por 'up', so por 'down -v'.\n"
+    printf "  Para voltar atrás: git -C %s checkout <ramo-anterior>\n" "$dir"
+    printf "  e outra vez este comando.\n"
+}
+
 # ------------------------------------------------------------------ args --
+# `--actualizar` e tratado antes do loop: e um sub-comando, nao uma opcao que
+# se combine com as outras. `deploy.sh --actualizar` actualiza; com um caminho,
+# actualiza esse.
+if [ "${1:-}" = "--actualizar" ]; then
+    command -v git >/dev/null 2>&1 || falhar "git nao esta instalado"
+    command -v docker >/dev/null 2>&1 || falhar "docker nao esta instalado"
+    shift
+    actualizar "${1:-$RAIZ}"
+    exit 0
+fi
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --porta) PORTA="$2"; shift 2 ;;
@@ -117,7 +185,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# A porta é escolhida aqui, depois dos argumentos, para que `--porta` tenha
+# A porta é escolhida aqui, depois dos argumentos, para que '--porta' tenha
 # precedência e a procura só corra quando ninguém pediu uma.
 if [ -z "$PORTA" ]; then
     PORTA="$(escolher_porta)" || falhar \
@@ -188,8 +256,8 @@ for ficheiro in Dockerfile docker-compose.yml Caddyfile; do
 done
 
 # --------------------------------------------------------------- segredos --
-# `MAILUTILS_SECRET_KEY` é o que assina as sessões e os tokens de CSRF. Gerado
-# aqui e enviado para lado nenhum: o valor vive só no `.env` do servidor, com
+# 'MAILUTILS_SECRET_KEY' é o que assina as sessões e os tokens de CSRF. Gerado
+# aqui e enviado para lado nenhum: o valor vive só no '.env' do servidor, com
 # permissões 600.
 passo "A preparar a configuração"
 
@@ -207,7 +275,7 @@ SECRETO_NOVO="$(gerar_segredo)"
 BASE_PUBLICA="http://$(hostname -f 2>/dev/null || hostname):$PORTA"
 [ -n "$DOMINIO" ] && BASE_PUBLICA="https://$DOMINIO"
 
-# `MAILUTILS_ALLOW_INSECURE_MEDIA=1` é a consequência de servir em http, e é
+# 'MAILUTILS_ALLOW_INSECURE_MEDIA=1' é a consequência de servir em http, e é
 # explícita. A aplicação recusa arrancar em produção sem https; ligar isto é
 # dizer "eu sei o que estou a fazer e aceito a penalização". Está no compose,
 # na documentação e no arranque, e a interface avisa o utilizador.
@@ -275,16 +343,16 @@ FIM
     chmod 600 "$RAIZ/.env"
 fi
 
-#: `--no-build` quando a imagem já foi construída à mão (ver o bloco do build).
+#: '--no-build' quando a imagem já foi construída à mão (ver o bloco do build).
 ARRANQUE=()
 
 # ------------------------------------------------------- pre-voo: DNS no build --
 #
-# O contentor de build precisa de resolver `pypi.org`, e o `git clone` deste
-# script **não** — corre no host. Num servidor com `systemd-resolved` (o
-# omisso em Debian e Ubuntu desde 2018) o host tem `nameserver 127.0.0.53`, e o
+# O contentor de build precisa de resolver 'pypi.org', e o 'git clone' deste
+# script **não** — corre no host. Num servidor com 'systemd-resolved' (o
+# omisso em Debian e Ubuntu desde 2018) o host tem 'nameserver 127.0.0.53', e o
 # contentor herda essa linha. O stub só escuta no loopback do host, por isso lá
-# dentro não resolve: o `pip` falha com `Temporary failure in name resolution`
+# dentro não resolve: o 'pip' falha com 'Temporary failure in name resolution'
 # ao fim de quatro tentativas e mais de seis minutos de espera.
 #
 # Reproduzido, e as três saídas verificadas uma a uma:
@@ -293,8 +361,8 @@ ARRANQUE=()
 #   docker run --rm --network=host    <img>  getent hosts pypi.org   -> resolve
 #   docker run --rm --dns 1.1.1.1     <img>  getent hosts pypi.org   -> resolve
 #
-# A correcção é `docker build --network=host`, e é só para o **build**: o
-# serviço em execução continua com o bind em `127.0.0.1` e o `ports` do compose.
+# A correcção é 'docker build --network=host', e é só para o **build**: o
+# serviço em execução continua com o bind em '127.0.0.1' e o 'ports' do compose.
 # O build só fala com o PyPI, e sem rede nenhuma de outra parte.
 
 IMAGEM_BUILD="${IMAGEM_BUILD:-python:3.12-slim-bookworm}"
@@ -329,9 +397,9 @@ else
     passo "A construir a imagem com a rede do host"
     IMAGEM_COMPOSE="$(sed -n 's/^[[:space:]]*image:[[:space:]]*//p' docker-compose.yml | head -1)"
     [ -n "$IMAGEM_COMPOSE" ] || falhar "não encontrei a tag da imagem em docker-compose.yml"
-    # `docker build` e não `docker compose build` de propósito: o `--network`
-    # é uma opção do `docker build`, e escrevê-lo no compose depende da
-    # versão do Compose aceitar essa chave. O `docker build` é o mesmo motor e
+    # 'docker build' e não 'docker compose build' de propósito: o '--network'
+    # é uma opção do 'docker build', e escrevê-lo no compose depende da
+    # versão do Compose aceitar essa chave. O 'docker build' é o mesmo motor e
     # aceita a opção em todas as versões.
     if docker build --network=host --progress=plain -t "$IMAGEM_COMPOSE" . >"$RAIZ/.build.log" 2>&1
     then
@@ -345,11 +413,11 @@ else
     ARRANQUE=(--no-build)
 fi
 
-# **`--quiet` esconde o erro.** Um `pip install` que falha diz porquê em três
-# linhas, e o `--quiet` enterra-as em trezentas de transferências de wheel. A
+# **'--quiet' esconde o erro.** Um 'pip install' que falha diz porquê em três
+# linhas, e o '--quiet' enterra-as em trezentas de transferências de wheel. A
 # primeira vez que este script correu num servidor a falhar, a mensagem foi
-# `process "/bin/sh -c python -m venv /venv ..." did not complete successfully:
-# exit code: 1` — que não diz nada. Um gate que engole a falha obriga a repetir
+# 'process "/bin/sh -c python -m venv /venv ..." did not complete successfully:
+# exit code: 1' — que não diz nada. Um gate que engole a falha obriga a repetir
 # o comando à mão para saber o que se passou, e repetir é o que se tenta
 # evitar. O log vai inteiro para um ficheiro e as últimas linhas entram no
 # ecrã. (F-15)
@@ -480,10 +548,44 @@ fi
 cat <<FIM
 ${G}A seguir${N}
 
-  ver o log          docker compose -f $RAIZ/docker-compose.yml logs -f
-  actualizar         git -C $RAIZ pull && docker compose -C $RAIZ up -d --build
-  parar              docker compose -C $RAIZ down
-  apagar tudo        docker compose -C $RAIZ down -v      ${E}(apaga a base de dados)${N}
+${G}ACTUALIZAR — a base de dados não é tocada${N}
+
+    cd $RAIZ && git pull && docker compose up -d --build
+
+  Um comando. Faz cópia de segurança da base e actualiza. Sem -v em lado
+  nenhum: o volume 'dados' fica intacto, a base migra no arranque e nenhum
+  utilizador se perde.
+
+  Isto foi medido com um contentor real, não lido num ecrã: a mesma base,
+  antes e depois, com o mesmo digest. Ver tests/test_atualizacao.py.
+
+  Se o git pull der conflito (porque alguém editou um ficheiro versionado
+  neste directório), nada é actualizado e a aplicação continua na versão
+  anterior, a servir. É o comportamento certo: um deploy a meio é pior do
+  que nenhum deploy.
+
+  O mesmo, com cópia de segurança antes:
+
+    ./deploy.sh --actualizar
+
+${G}PARAR${N}
+
+    docker compose -f $RAIZ/docker-compose.yml logs -f
+    docker compose -C $RAIZ down
+
+${E}ISTO APAGA A BASE DE DADOS:${N}
+
+    docker compose -C $RAIZ down -v
+
+  A diferença entre 'down' e 'down -v' é o -v, e o -v é tudo. Verificado:
+  'down' deixa o volume intacto; 'down -v' remove-o.
+
+  Antes de o fazer, uma cópia:
+
+    docker compose -C $RAIZ exec -T mailutils \\
+        python -c "import sqlite3; a=sqlite3.connect('/data/mailutils.db'); \\
+        b=sqlite3.connect('/data/copia.db'); a.backup(b); b.close()"
+    docker compose -C $RAIZ cp mailutils:/data/copia.db ./copia-\$(date +%F).db
 
 FIM
 

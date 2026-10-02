@@ -140,6 +140,13 @@ class Settings:
     logo_max_px: int
     max_visible_links: int
 
+    max_list_size: int
+    max_pending_confirmations: int
+    confirm_cooldown_seconds: int
+    unsubscribe_token_days: int
+    sending_enabled: bool
+    sender_postal_address: str
+
     mail_backend: str
     smtp_host: str
     smtp_port: int
@@ -286,6 +293,27 @@ def load_settings(env: str | None = None) -> Settings:
             "Em desenvolvimento use MAILUTILS_MAIL_BACKEND=console."
         )
 
+    # `MAILUTILS_SENDING_ENABLED` é o interruptor que torna `NFR-17` verificável.
+    #
+    # Sem isto, `MAILUTILS_SENDER_POSTAL_ADDRESS` é uma variável que o operador
+    # pode por no `.env` e que não faz nada — que é pior do que não a existir,
+    # porque parece conformidade (finding M-05 da revisão T014). Ligar o envio é
+    # um acto explícito, e o acto **exige** remetente identificável.
+    sending_enabled = _bool("MAILUTILS_SENDING_ENABLED", default=False)
+    sender_postal_address = (os.environ.get("MAILUTILS_SENDER_POSTAL_ADDRESS") or "").strip()
+    if sending_enabled and is_production and not sender_postal_address:
+        raise ConfigError(
+            "MAILUTILS_SENDING_ENABLED=1 exige MAILUTILS_SENDER_POSTAL_ADDRESS. "
+            "Enviar email exige um remetente identificável: um endereço de correio "
+            "postal, em Portugal e na União Europeia. Sem isso a instalação "
+            "declara conformidade que não tem. (NFR-17)"
+        )
+    if sending_enabled and not sender_postal_address:
+        warnings.append(
+            "MAILUTILS_SENDING_ENABLED=1 sem MAILUTILS_SENDER_POSTAL_ADDRESS. "
+            "Em desenvolvimento isso é tolerado; em produção o arranque é recusado."
+        )
+
     db_path = Path(os.environ.get("MAILUTILS_DB_PATH") or DEFAULT_DB_PATH)
     media_dir = Path(os.environ.get("MAILUTILS_MEDIA_DIR") or DEFAULT_MEDIA_DIR)
 
@@ -326,6 +354,27 @@ def load_settings(env: str | None = None) -> Settings:
         max_upload_bytes=_int("MAILUTILS_MAX_UPLOAD_BYTES", 2 * 1024 * 1024, minimum=1024),
         logo_max_px=_int("MAILUTILS_LOGO_MAX_PX", 300, minimum=16),
         max_visible_links=_int("MAILUTILS_MAX_VISIBLE_LINKS", 6, minimum=1),
+        # Os limites anti-abuso são configuração, nunca constantes escondidas
+        # (NFR-18). Reduzi-los é legítimo; o valor por omissão é que tem de ser
+        # defensável sem revisão legal.
+        #
+        # 5000 é uma afirmação sobre o produto: a lista de uma pessoa, não uma
+        # campanha. A Persona 4 fala em 150 destinatários, portanto é folgado
+        # com uma ordem de grandeza. Se alguém precisar de mais, aumenta-se — e
+        # isso passa a ser decisão documentada de quem opera.
+        max_list_size=_int("MAILUTILS_MAX_LIST_SIZE", 5000, minimum=1),
+        # Confirmações pendentes por utilizador. Um utilizador com sessão que
+        # queira usar a confirmação como relay de email bombing bate aqui
+        # muito antes de chegar a enviar dez mil emails.
+        max_pending_confirmations=_int("MAILUTILS_MAX_PENDING_CONFIRMATIONS", 500, minimum=1),
+        # `minimum=1` e não 0. Com 0 a condição `passado < cooldown` nunca é
+        # verdadeira e o limite desaparece por configuração — e o `CLAUDE.md`
+        # diz que os limites anti-abuso nunca se afrouxam para simplificar
+        # (finding m-15 da revisão T014).
+        confirm_cooldown_seconds=_int("MAILUTILS_CONFIRM_COOLDOWN_SECONDS", 60, minimum=1),
+        unsubscribe_token_days=_int("MAILUTILS_UNSUBSCRIBE_TOKEN_DAYS", 30, minimum=1),
+        sender_postal_address=(os.environ.get("MAILUTILS_SENDER_POSTAL_ADDRESS") or "").strip(),
+        sending_enabled=_bool("MAILUTILS_SENDING_ENABLED", default=False),
         mail_backend=mail_backend,
         smtp_host=smtp_host,
         smtp_port=_int("SMTP_PORT", 587, minimum=1),
