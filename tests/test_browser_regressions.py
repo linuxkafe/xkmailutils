@@ -257,43 +257,55 @@ class TestNenhumSelectorOrfaoEmAppCss:
         ), "a decisão deixou de estar documentada"
 
 
-class TestAInstalaOCiTemDeTerTudo:
-    """`make check` exige o Chromium. A CI tem de o instalar.
+class TestNaoHaCiEOGateELocal:
+    """Não há GitHub Actions. O gate é `make check`, corrido à mão.
 
-    `make setup` faz `pip install -e ".[dev]"`, que instala o **pacote**
-    `playwright` — e não o browser. A CI correria `make check` num
-    `ubuntu-latest` sem Chromium em cache e ficaria vermelha no primeiro run,
-    que é o F-03. A única mitigação era a mensagem do gate, que ninguém lê
-    numa CI que falha. (F-03)
+    Esta classe foi `TestAInstalaOCiTemDeTerTudo`, e protegia uma coisa que já
+    não existe. O que ficou de aproveitável foi a lição do F-03: `make setup`
+    instala o **pacote** `playwright`, e não o browser — quem corre `make e2e`
+    sem o Chromium falha alto numa mensagem que não diz o que fazer.
 
-    Um workflow é configuração, e configuração não tem testes — até alguém
-    escrever este teste. A leitura é por texto e não por YAML de propósito:
-    acrescentar PyYAML para isto seria uma dependência nova por causa de um
-    `grep`, e o `CLAUDE.md` é explícito sobre dependências.
+    A CI escondia esse problema. Sem CI, a lição vive onde quem a encontra vai
+    ler: no `Makefile`, na linha que lembra, e no `README`, no bloco de
+    instalação. Estes testes verificam que essa documentação não desaparece em
+    silêncio — que era o risco real de tirar a CI.
     """
 
     @staticmethod
     def _workflows() -> list[Path]:
         raiz = ROOT / ".github" / "workflows"
+        if not raiz.is_dir():
+            return []
         return sorted(raiz.glob("*.yml")) + sorted(raiz.glob("*.yaml"))
 
-    @staticmethod
-    def _instalam_browser(caminho: Path) -> bool:
-        return "playwright install" in caminho.read_text(encoding="utf-8")
+    def test_nao_ha_workflows(self) -> None:
+        """A CI foi removida de propósito. Este teste diz que foi de propósito.
 
-    def _ci_que_corre_make_check(self) -> list[Path]:
-        return [p for p in self._workflows() if "make check" in p.read_text(encoding="utf-8")]
+        Sem ele, o primeiro `git push` de um workflow encontrado num gist ou
+        numa máquina antiga reintroduz a CI sem ninguém decidir. Não é um
+        teste de que a CI funciona; é um teste de que a decisão continua de pé.
+        """
+        assert not self._workflows(), (
+            f"voltou a haver workflow em .github/workflows/: "
+            f"{[p.name for p in self._workflows()]}. A CI foi removida de "
+            f"propósito; o gate é `make check`, em local. Se avoltares, é uma "
+            f"decisão nova — e então este teste vai abaixo com ela, não contornado."
+        )
 
-    def test_ha_pelo_menos_uma_ci(self) -> None:
-        assert self._workflows(), "não há workflow nenhum em .github/workflows/"
-        assert self._ci_que_corre_make_check(), "nenhum workflow corre `make check`"
+    def test_o_makefile_diz_que_o_browser_se_instala_a_separado(self) -> None:
+        """A lição do F-03 sobrevive à saída da CI, escrita onde se lê."""
+        makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
+        assert "playwright install chromium" in makefile, (
+            "o Makefile deixou de dizer que o browser do Playwright se instala "
+            "à parte de `make setup`. Sem CI, este é o único sítio que avisa "
+            "quem vai correr `make e2e` — e o F-03 foi exactamente um `make "
+            "check` a falhar por o Chromium não estar instalado (F-03)"
+        )
 
-    def test_toda_a_ci_que_corre_o_gate_instala_o_browser(self) -> None:
-        sem = [p.name for p in self._ci_que_corre_make_check() if not self._instalam_browser(p)]
-        assert not sem, (
-            f"estes workflows correm `make check` sem instalar o Chromium: {sem}. "
-            f"`make setup` instala o pacote, não o browser, e `e2e-check` falha "
-            f"alto sem ele — a CI fica vermelha no primeiro run. (F-03)"
+    def test_o_readme_diz_o_mesmo(self) -> None:
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        assert "playwright install chromium" in readme, (
+            "o README deixou de dizer que `make setup` instala o pacote e não o browser (F-03)"
         )
 
     def test_o_dockerfile_nao_precisa_do_browser(self) -> None:
