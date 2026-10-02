@@ -17,7 +17,7 @@
 | T010 | Relatório de telemetria local (histórico de scores) | baixo | baixo | P3 | planeado |
 | T011 | Múltiplos logótipos / logótipo responsivo para ecrãs escuros | baixo | médio | P3 | planeado |
 | T012 | Anti-replay de OTP por IP além do cooldown por email | médio | baixo | P3 | planeado |
-| T013 | Temas de assinatura adicionais (paletas) **+ 3 variantes de layout** | médio | médio | P1 | em curso |
+| T013 | Temas de assinatura adicionais (paletas) **+ 3 variantes de layout** | médio | médio | P1 | feito |
 | T014 | Listas de destinatários com confirmação por OTP e importação CSV | alto | alto | P1 | feito |
 | T015 | Compositor de email com score + envio | alto | alto | P1 | em curso |
 | T016 | Agendamento de envios | alto | alto | P2 | planeado |

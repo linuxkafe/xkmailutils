@@ -94,6 +94,14 @@ make doctor    # estado do ambiente
 4. **Exportar.** `.html` para colar no Thunderbird, `.txt` para clientes que
    não aceitam HTML, com instruções por cliente.
 
+E, à parte, **listas de destinatatórios**: criar a lista, acrescentar ou
+importar endereços, e pedir o código de confirmação a cada um. **Importar não
+confirma ninguém** — a confirmação é um acto separado, e é o que separa uma
+lista de contactos de uma lista de spam. Quem não confirmar não recebe.
+
+O **compositor e o envio** são o ticket seguinte. O que existe hoje é a lista e
+a confirmação; enviar, ainda não.
+
 ## As regras que o produto existe para impor
 
 - **Nada de `data:` URI.** É o sinal de spam mais severo numa assinatura. A
@@ -126,9 +134,12 @@ esse aviso não desaparece.
 ## O que este projecto não é
 
 - **Não** garante entrega fora do spam.
-- **Não** é um cliente de email. Não envia, não recebe.
+- **Não** é um cliente de email. Não recebe nem sincroniza. A aplicação **envia**
+  — para listas de destinatários que o próprio utilizador constrói e cujos
+  endereços confirmaram a inscrição por código único. Um endereço por confirmar
+  não entra em nenhum envio, em nenhum caminho.
 - **Não** é multi-tenant. Uma instalação, um operador, N utilizadores.
-- **Não** é uma newsletter. Gera assinaturas; o envio é do cliente de email.
+- **Não** é uma ferramenta de marketing. Não faz segmentos, campanhas nem A/B testing. O envio em massa é do T015 e ainda não existe; o que existe hoje é a lista e a confirmação por código.
 
 Ver `CLAUDE.md` para o contrato operacional completo e `docs/ROADMAP.md` para o
 que está planeado e o que está deliberadamente fora de âmbito.

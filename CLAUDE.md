@@ -187,10 +187,22 @@ make verify    # lê os critérios do ticket. NÃO é um gate — diz isso na sa
 
 ## Stable Context (recarregar em cada sessão)
 
+Sete documentos. Todos são de leitura obrigatória: em 2026-10-02 o
+`aes-narrative` mediu uma taxa de omissão de 29%, e os dois que faltavam eram
+exactamente os que mais importavam ler.
+
 - Este ficheiro (`CLAUDE.md`)
 - `docs/VISION.md` — o problema e os limites honestos
-- `docs/REQUIREMENTS.md` — o que está `VERIFICADO` e porquê
+- `docs/REQUIREMENTS.md` — o que está `IMPLEMENTADO`, o que está `VERIFICADO`
+  e porquê. **Hoje são 67 claims `IMPLEMENTADO` e zero `VERIFICADO`.**
+- `docs/ROADMAP.md` — o que está em cada sprint, e a tabela de **decisões
+  revertidas**. Sem este ficheiro ninguém sabe que o Non-Goal de "não envia"
+  foi invertido a 2026-10-02, e um agente work from o `CLAUDE.md` chega ao
+  caminho de envio a inventar a história.
+- `docs/PERSONAS.md` — quem usa isto. A Persona 4 foi escrita por um agente e
+  está assinalada como hipótese; ler a nota antes de a tratar como evidência.
 - `docs/DESIGN.md` — tokens e a invariante cabeçalho == rodapé
+- `aes/kanban.md` — estado real, e a dívida conhecida que ninguém resolveu
 - `aes/kanban.md` — estado do projecto
 - `aes/handoffs/` — se retomar trabalho interrompido
 

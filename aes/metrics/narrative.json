@@ -1,0 +1,43 @@
+{
+  "ts": "2026-10-02T13:25:00+01:00",
+  "ferramenta": "aes-narrative (adaptado: 0 shadow docs, o script upstream devolve 0.0% de omissao e 'low omission rate')",
+  "1_omissao": {
+    "docs_no_projecto": 7,
+    "no_stable_context_antes": 5,
+    "depois": 7,
+    "taxa_antes": 0.29,
+    "taxa_depois": 0.0,
+    "corrigido": "docs/ROADMAP.md e docs/PERSONAS.md acrescentados ao Stable Context do CLAUDE.md. O ROADMAP guarda a tabela de decisões revertidas — sem ele um agente não sabe que o Non-Goal mudou."
+  },
+  "2_pinning": {
+    "CLAUDE.md": {
+      "regras_imutaveis": 22,
+      "datas": 0
+    },
+    "ROADMAP": {
+      "regras": 0,
+      "datas": 4
+    },
+    "leitura": "as regras vivem todas no CLAUDE.md e as datas todas no ROADMAP. São eixos separados e é o desenho certo: o que muda tem data."
+  },
+  "3_concentracao": {
+    "gini": 0.23,
+    "leitura": "gini baixo, distribuição quase uniforme. O que domina não é o volume de um doc é a atenção: CLAUDE.md é lido primeiro e por inteiro, e nenhuma das decisões desta sessão passou por ele."
+  },
+  "4_cobertura_sintese": {
+    "DRAFT": 16,
+    "IMPLEMENTADO": 67,
+    "VERIFICADO": 0,
+    "fraccao": 0.0,
+    "leitura": "a dimensão mais baixa e a mais importante. 67 claims escritos com a certeza de quem fez o trabalho; nenhum passado pelo script que existe para os medir. Hoje dois tickets já medem."
+  },
+  "5_clustering": {
+    "findings": {
+      "BLOCKER": 4,
+      "MAJOR": 10,
+      "MINOR": 16
+    },
+    "leitura": "4 BLOCKER do mesmo tipo e do mesmo commit: estados e docstrings que descrevem o que devia ser. Um BLOCKER isolado é azar; quatro iguais são método, e método corrige-se uma vez."
+  },
+  "accao": "docs/ROADMAP.md e docs/PERSONAS.md entradas no Stable Context."
+}

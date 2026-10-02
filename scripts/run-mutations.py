@@ -379,6 +379,27 @@ MUTACOES: tuple[Mutacao, ...] = (
         "por decisao.",
         ("F-01",),
     ),
+    Mutacao(
+        "M-23",
+        "src/mailutils/signatures/renderer.py",
+        '            f\'display:inline-block;">\'',
+        '            f\'display:inline;">\'',
+        (
+            "python3",
+            "-m",
+            "pytest",
+            "tests/test_renderer.py",
+            "-q",
+            "--no-cov",
+            "-k",
+            "StackNaoMudou",
+        ),
+        "Muda UMA palavra e portanto alguns bytes do HTML do `stack`. Esta e a "
+        "mutacao que provou que o T013 afirmava 'byte a byte' sem nada que o "
+        "provasse: os 744 testes passavam. Agora morre em "
+        "`tests/golden/stack.html`.",
+        ("F-01",),
+    ),
 )
 
 def correr(mutacao: Mutacao) -> tuple[bool, str]:

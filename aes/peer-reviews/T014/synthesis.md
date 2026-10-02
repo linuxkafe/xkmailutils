@@ -64,6 +64,15 @@ critério `C-11` escrito como `-k "tecto_nao_prende"`, e o teste chama-se
 `test_o_teto_nao_prende_o_utilizador`. O critério corre **zero testes** e sai com
 código 5. Uma rubrica não verificada é um instrumento que não mede.
 
+**Não corrigi a rubrica.** Editei-a, vi o hash deixar de bater, e reverti. O
+critério está errado e continua errado. A razão para não o consertar é a mesma
+que faz a rubrica valer: ela diz que *"qualquer edição posterior a este ficheiro
+invalida a revisão"*, e um instrumento que se pode corrigir depois de ver os
+resultados deixa de ser um compromisso. O `C-11` devia ser reescrito **na
+próxima ronda**, com um hash novo e antes de alguém ver o candidato.
+
+Isto é mais discomfortável do que útil.
+
 ## O que o candidato faz bem
 
 Registo isto porque uma revisão que só sabe dizer mal não é uma revisão.

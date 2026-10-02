@@ -7,6 +7,7 @@ spam ou partem o Outlook.
 
 from __future__ import annotations
 
+import pathlib
 import re
 
 import pytest
@@ -544,3 +545,50 @@ class TestCorreccoesAosTestesDeLayout:
         html = render(settings, **sem_nota, layout="compact")
         assert " · " in html
         assert html.count("<br>") == 1
+
+
+class TestStackNaoMudouUmByte:
+    """M-10: a afirmação "byte a byte" estava escrita sem nenhum teste que
+    comparasse bytes.
+
+    `test_stack_continua_byte_identico` comparava quatro fragmentos, e uma
+    mutação de um byte (`display:inline-block` → `display:inline`) passava com
+    os 744 testes verdes. Um teste que verifica o que mudou continua a passar
+    depois de o resto mudar — que é o que ele fazia.
+    """
+
+    @staticmethod
+    def _ouro() -> str:
+        return (pathlib.Path(__file__).parent / "golden" / "stack.html").read_text(encoding="utf-8")
+
+    def test_o_html_do_stack_e_o_golden(self, settings: config.Settings) -> None:
+        """Compara o HTML **todo**, byte a byte.
+
+        Não uma assinatura, não uma AssertionFailed de fragmentos: o
+        comprimento. Um `assert len(html) == len(ouro)` sozinho já apanha
+        quase tudo, e o `==` confirma o resto.
+        """
+        obtido = render(settings, **FULL, layout="stack")
+        ouro = self._ouro()
+        assert len(obtido) == len(ouro), (
+            f"o `stack` tem {len(obtido)} bytes e o dourado tem {len(ouro)}: "
+            f"mudou {abs(len(obtido) - len(ouro))} byte(s) sem ninguém dar por isso"
+        )
+        if obtido != ouro:
+            for i, (x, y) in enumerate(zip(obtido, ouro, strict=False)):
+                if x != y:
+                    raise AssertionError(
+                        f"primeira diferença no byte {i}: "
+                        f"obtido {x!r} contra dourado {y!r}\n"
+                        f"  contexto obtido: {obtido[max(0, i - 60) : i + 40]!r}\n"
+                        f"  contexto dourado: {ouro[max(0, i - 60) : i + 40]!r}"
+                    )
+
+    def test_o_golden_diz_qual_commit_produziu(self) -> None:
+        """O dourado tem de dizer de onde veio. Um golden sem origem é um
+        golden que ninguém pode reconstituir."""
+        readme = (pathlib.Path(__file__).parent / "golden" / "README.md").read_text(
+            encoding="utf-8"
+        )
+        assert "01ee2f1" in readme
+        assert "T013" in readme
