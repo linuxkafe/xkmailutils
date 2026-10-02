@@ -324,13 +324,19 @@ def importar_csv(
     list_id: int,
     conteudo: bytes,
     settings: Settings,
+    confirmar_imediatamente: bool = False,
 ) -> ResultadoImportacao:
-    """Lê um `.csv` de endereços. **Importar não confirma ninguém** (FR-6.5).
+    """Lê um `.csv` de endereços.
 
-    Os endereços entram como pendentes e o utilizador dispara a confirmação.
-    Importar 5000 endereços que confirmaram por BCC já é spam, e o produto não é
-    o que faz essa parte — a distinção é o que separa esta função de um `mail
-    merge`.
+    Por defeito **importar não confirma ninguém** (FR-6.5). Os endereços entram
+    como pendentes e o utilizador dispara a confirmação. Importar 5000
+    endereços que confirmaram por BCC já é spam, e o produto não é o que faz
+    essa parte — a distinção é o que separa esta função de um `mail merge`.
+
+    Se `confirmar_imediatamente` for `True`, os endereços são inseridos já com
+    `confirmed_at` preenchido, sem enviar email de confirmação. É uma
+    operação de operador e assume-se que o consentimento foi obtido por outro
+    meio. A função continua a respeitar o teto de tamanho da lista.
 
     Uma linha inválida é contada e listada e não aborta a importação; o
     ficheiro inteiro inválido **é** erro, porque aí não há nada a importar.
@@ -402,7 +408,7 @@ def importar_csv(
         if normalizado in ja_presentes:
             resultado.ja_existentes += 1
             continue
-        if ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations:
+        if not confirmar_imediatamente and ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations:
             resultado.invalidos.append(
                 f"interrompido — chegou ao teto de "
                 f"{settings.max_pending_confirmations} confirmações por confirmar. "
@@ -414,15 +420,25 @@ def importar_csv(
                 f"interrompido — a lista chegou ao teto de {settings.max_list_size} endereços"
             )
             break
-        a_inserir.append((list_id, normalizado, nome, agora))
+        if confirmar_imediatamente:
+            a_inserir.append((list_id, normalizado, nome, agora, agora))
+        else:
+            a_inserir.append((list_id, normalizado, nome, agora))
 
     if a_inserir:
         with transaction(conn):
-            conn.executemany(
-                "INSERT OR IGNORE INTO list_addresses (list_id, email, name, created_at)"
-                " VALUES (?, ?, ?, ?)",
-                a_inserir,
-            )
+            if confirmar_imediatamente:
+                conn.executemany(
+                    "INSERT OR IGNORE INTO list_addresses (list_id, email, name, created_at, confirmed_at)"
+                    " VALUES (?, ?, ?, ?, ?)",
+                    a_inserir,
+                )
+            else:
+                conn.executemany(
+                    "INSERT OR IGNORE INTO list_addresses (list_id, email, name, created_at)"
+                    " VALUES (?, ?, ?, ?)",
+                    a_inserir,
+                )
         resultado.importados = len(a_inserir)
 
     # As linhas nunca examinadas contam como perdidas. `ja_existentes` é uma

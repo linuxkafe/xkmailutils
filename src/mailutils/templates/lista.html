@@ -55,8 +55,9 @@
   </details>
   {% endif %}
   <p class="muted small">
-    Importar não confirma ninguém. Escolha os endereços abaixo e peça a
-    confirmação.
+    Por defeito a importação não confirma ninguém. Se foi importado em modo
+    “já confirmado”, os endereços ficam com <code>confirmed_at</code> preenchido
+    e não recebem email de confirmação.
   </p>
 </div>
 {% endif %}
@@ -84,10 +85,19 @@
     <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
     <label for="csv">Ficheiro CSV</label>
     <input type="file" id="csv" name="ficheiro" required>
+    <label class="checkbox">
+      <input type="checkbox" name="confirmar_imediatamente" value="on">
+      Importar já confirmado
+    </label>
     <p class="muted small">
       Uma coluna de email. A primeira linha pode ser o cabeçalho
       (<code>nome,email</code>). Linhas inválidas são listadas e não abortam a
       importação.
+    </p>
+    <p class="muted small">
+      Marcar “Importar já confirmado” significa assumir que o consentimento foi
+      obtido por outro meio. Endereços importados ficam com <code>confirmed_at</code>
+      preenchido e não recebem email de confirmação.
     </p>
     <button type="submit" class="btn btn--secondary">Importar</button>
   </form>

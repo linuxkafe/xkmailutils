@@ -226,9 +226,17 @@ async def importar(
     session: Active,
     list_id: int,
     csrf_token: Annotated[str, Form()] = "",
+    confirmar_imediatamente: Annotated[str, Form()] = "",
     ficheiro: Annotated[UploadFile, File()] = None,  # type: ignore[assignment]
 ) -> Response:
-    """Importa um ficheiro de endereços. **Não confirma ninguém** (FR-6.5).
+    """Importa um ficheiro de endereços.
+
+    Por defeito, **importar não confirma ninguém** (FR-6.5). Os endereços entram
+    como pendentes e o utilizador dispara a confirmação.
+
+    Se `confirmar_imediatamente` estiver presente no formulário, os endereços são
+    inseridos já com `confirmed_at` preenchido, assumindo que o operador tem
+    consentimento prévio. É uma operação de operador e está desligada por defeito.
 
     A extensão não é filtreada, por decisão: uma importação rejeitada por
     extensão obriga quem tem o ficheiro certo a renomeá-lo, e o que interessa
@@ -251,7 +259,8 @@ async def importar(
         return ir(request, f"/listas/{list_id}?erro=grande")
 
     try:
-        resultado = service.importar_csv(conn, session.user_id, list_id, conteudo, settings)
+        confirmar = confirmar_imediatamente.lower() in ("on", "1", "true", "yes")
+        resultado = service.importar_csv(conn, session.user_id, list_id, conteudo, settings, confirmar_imediatamente=confirmar)
     except service.ErroLista as erro:
         return ir(request, f"/listas/{list_id}?erro=importacao&detalhe={_motivo(erro)}")
 
