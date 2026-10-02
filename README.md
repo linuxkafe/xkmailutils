@@ -30,12 +30,22 @@ curl -fsSL https://raw.githubusercontent.com/linuxkafe/xkmailutils/main/deploy.s
 TLS sem tocar em `/etc`: `--dominio mail.exemplo.pt`, que liga um Caddy com
 certificado automático.
 
+**Actualizar depois também é um comando:**
+
+```bash
+cd /opt/xkmailutils && sudo ./deploy.sh --actualizar
+```
+
+Faz cópia de segurança da base, `git pull` e reconstrói. **Não apaga a base de
+dados** — medido com um contentor real, ver [Actualizar](#actualizar).
+
 **Antes de correr isto com `sudo`, lê o topo do `deploy.sh`.** Está lá escrito o
 que ele **não** faz: não instala nginx nem certbot, não abre portas de firewall,
 não define a palavra-passe do administrador. Um `curl | sudo bash` que faz
 pouco é legível; um que faz muito, não.
 
 Para correr o código em vez do contentor, ver [Arrancar](#arrancar).
+Para actualizar depois, ver [Actualizar](#actualizar).
 
 ---
 
