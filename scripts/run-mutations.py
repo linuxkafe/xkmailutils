@@ -161,26 +161,27 @@ MUTACOES: tuple[Mutacao, ...] = (
         "mortos, que era o F-11.",
         ("F-11",),
     ),
-    Mutacao(
-        "M-10",
-        ".github/workflows/ci.yml",
-        "      - name: Install browser\n"
-        "        run: python3 -m playwright install --with-deps chromium",
-        "      - name: Install browser\n        run: true  # MUTACAO M-10",
-        (
-            "python3",
-            "-m",
-            "pytest",
-            "tests/test_browser_regressions.py",
-            "-q",
-            "--no-cov",
-            "-k",
-            "ci",
-        ),
-        "A CI volta a não instalar o browser, e `make check` fica vermelho no "
-        "primeiro run. Era o F-03.",
-        ("F-03",),
-    ),
+    # M-10 está retirado, e a lacuna no numbering é intencional.
+    #
+    # Era a prova de que o browser chegava instalado: sem o passo de instalação, o
+    # `make check` ficava vermelho no primeiro run. A CI foi removida em
+    # `dfe0948` por decisão do dono, e o projecto passou a afirmar o oposto —
+    # `test_nao_ha_workflows` em `tests/test_browser_regressions.py` falha se
+    # voltar a haver um workflow em `.github/workflows/`. Uma mutação de um
+    # ficheiro que não existe não prova nada, e deixá-la aqui partia
+    # `make mutation-check` com um `FileNotFoundError` em vez de correr as 22
+    # restantes.
+    #
+    # Quem garante o browser agora é `make e2e-check`, que verifica se o Chromium
+    # está disponível antes de correr o browser. Isso é uma verificação de
+    # ambiente, não uma mutação de uma linha, e por isso não vive aqui.
+    #
+    # Os números dos restantes não mudam: `M-11` continua a ser `M-11`. Renumerar
+    # apontaria em silêncio todas as referências escritas a partir de `M-10`.
+    # (O `F-03` desta prova não é o mesmo `F-03` de `M-16`/`M-17`, que é sobre o
+    # `_RENDERERS` cair no layout por omissão. As etiquetas `F-*` são reutilizadas
+    # e não formam um registo estável — o que torna a âncora da mutação, e não a
+    # etiqueta, a parte que tem de estar certa.)
     Mutacao(
         "M-11",
         "src/mailutils/signatures/routes.py",
@@ -310,8 +311,8 @@ MUTACOES: tuple[Mutacao, ...] = (
     Mutacao(
         "M-19",
         "src/mailutils/lists/service.py",
-        '        if ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations:',
-        '        if ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations + 10**6:',
+        "and ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations",
+        "and ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations + 10**6",
         ("python3", "-m", "pytest", "tests/test_lists.py", "-q", "--no-cov", "-k", "AntiAbuso"),
         "O tecto de confirmacoes por confirmar deixa de existir. Um utilizador "
         "com sessao importa cinquenta mil enderecos e pede os codigos todos de "
@@ -405,12 +406,34 @@ MUTACOES: tuple[Mutacao, ...] = (
     ),
 )
 
-def correr(mutacao: Mutacao) -> tuple[bool, str]:
-    """Aplica a mutação, corre o comando e reverte. Devolve (morreu?, saída)."""
+def correr(mutacao: Mutacao) -> tuple[str, str]:
+    """Aplica a mutação, corre o comando e reverte. Devolve (estado, saída).
+
+    O estado é uma de três coisas, e a distinção é o ponto todo:
+
+    - ``"morreu"`` — a mutação foi aplicada e o comando ficou vermelho.
+    - ``"sobreviveu"`` — aplicada, e o comando passou. O teste não prova o que
+      alegava provar.
+    - ``"nao_aplicada"`` — a âncora ``antes`` já não existe no ficheiro. Não se
+      provou nada, e o código mudou por baixo da prova.
+
+    As duas últimas partem o gate, mas por razões opostas e com arrumações
+    diferentes: a primeira é um teste fraco, a segunda é uma prova que deixou de
+    estar ligada ao código. O veredicto ``morreu`` booleano tratava as duas como
+    a mesma coisa, e assim o `M-19` — cuja âncora o `c06bf6e` invalidou ao
+    reescrever a condição, sem ninguém re-correr o gate — apareceu como "mutação
+    que não morre", que é um defeito completamente diferente e com outra
+    arrumação.
+    """
     alvo = RAIZ / mutacao.ficheiro
+    if not alvo.is_file():
+        return "nao_aplicada", f"NÃO APLICADA: {mutacao.ficheiro} não existe"
     original = alvo.read_text(encoding="utf-8")
     if original.count(mutacao.antes) < 1:
-        return False, f"NÃO APLICADA: {mutacao.antes!r} não está em {mutacao.ficheiro}"
+        return "nao_aplicada", (
+            f"NÃO APLICADA: {mutacao.antes!r} não está em {mutacao.ficheiro}. "
+            f"O código mudou e a mutação ficou avulsa — actualiza a âncora."
+        )
 
     with tempfile.TemporaryDirectory() as pasta:
         copia = pathlib.Path(pasta) / alvo.name
@@ -432,7 +455,8 @@ def correr(mutacao: Mutacao) -> tuple[bool, str]:
 
     ultimas = [linha for linha in feito.stdout.splitlines() if linha.strip()][-3:]
     resumo = "\n".join(ultimas) or feito.stderr.strip()[-400:]
-    return (feito.returncode != 0), f"{resumo}\n    ({duracao:.0f}s)"
+    estado = "morreu" if feito.returncode != 0 else "sobreviveu"
+    return estado, f"{resumo}\n    ({duracao:.0f}s)"
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
@@ -450,23 +474,27 @@ def main() -> int:
     if not (args.escrever or args.verificar):
         ap.error("escolhe --escrever ou --verificar")
 
-    print(f"{'mutação':6} {'morreu':7} tickets  ficheiro")
+    print(f"{'mutação':6} {'estado':12} tickets  ficheiro")
     linhas = []
     silenciosas = []
+    avulsas = []
     SAIDA.parent.mkdir(parents=True, exist_ok=True)
     for mutacao in MUTACOES:
-        morreu, saida = correr(mutacao)
-        marca = "SIM" if morreu else "NÃO"
+        estado, saida = correr(mutacao)
+        marca = {"morreu": "SIM", "sobreviveu": "NÃO", "nao_aplicada": "AVULSA"}[estado]
         print(
-            f"{mutacao.identificador:6} {marca:7} {','.join(mutacao.tickets):8} {mutacao.ficheiro}"
+            f"{mutacao.identificador:6} {marca:12} {','.join(mutacao.tickets):8} {mutacao.ficheiro}"
         )
-        if not morreu:
+        if estado == "sobreviveu":
             silenciosas.append(mutacao.identificador)
+        elif estado == "nao_aplicada":
+            avulsas.append(mutacao.identificador)
         linhas.append(
             f"### {mutacao.identificador} — {mutacao.tickets[0]}\n\n"
             f"- **Ficheiro:** `{mutacao.ficheiro}`\n"
             f"- **Mutação:** `{mutacao.antes.strip()}` → "
             f"`{mutacao.depois.strip() or '(removido)'}`\n"
+            f"- **Estado:** `{estado}`\n"
             f"- **Comando:** `{' '.join(mutacao.comando)}`\n"
             f"- **Porque:** {mutacao.porque}\n"
             f"- **Saída observada:**\n\n```\n{saida}\n```\n"
@@ -491,17 +519,28 @@ def main() -> int:
         )
         SAIDA.write_text(
             cabecalho + "\n" + "\n".join(linhas) + f"\n**Total: {len(MUTACOES)} mutações. "
-            f"Sem escape: {len(silenciosas) or 'nenhuma'}.**\n",
+            f"Sem escape: {len(silenciosas) or 'nenhuma'}. "
+            f"Avulsas (a âncora já não existe no ficheiro): {len(avulsas) or 'nenhuma'}.**\n",
             encoding="utf-8",
         )
         print(f"\nescrito em {SAIDA.relative_to(RAIZ)}")
 
-    if silenciosas:
-        print(
-            f"\nFALHA: {len(silenciosas)} mutações NÃO fizeram o gate ficar "
-            f"vermelho: {', '.join(silenciosas)}"
-        )
-        print("Isso significa que os testes que dizem provar essas coisas não as provam.")
+    if silenciosas or avulsas:
+        if silenciosas:
+            print(
+                f"\nFALHA: {len(silenciosas)} mutações foram aplicadas e o gate "
+                f"continuou verde: {', '.join(silenciosas)}"
+            )
+            print("Os testes que dizem provar essas coisas não as provam.")
+        if avulsas:
+            print(
+                f"\nFALHA: {len(avulsas)} mutações não foram aplicadas, porque a "
+                f"âncora já não está no ficheiro: {', '.join(avulsas)}"
+            )
+            print(
+                "Não se provou nada, e o código mudou por baixo da prova. "
+                "Actualiza a âncora em `scripts/run-mutations.py`."
+            )
         return 1
     print(f"\n{len(MUTACOES)}/{len(MUTACOES)} mutações detectadas.")
     return 0

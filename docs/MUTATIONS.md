@@ -3,13 +3,11 @@ ticket: T008
 tipo: prova-por-mutação
 gerado-por: scripts/run-mutations.py
 regenerar: python3 scripts/run-mutations.py --escrever
-nota: |
-  Este ficheiro é GERADO. O que está em "Saída observada" é a saída real do
-  comando, escrita pelo script — ninguém escreve aqui à mão.
-
-  Vive em `docs/` e não em `aes/tickets/` porque é **evidência do produto** e
-  não andaço de processo: `NFR-16` cita-o, e um clone tem de poder verificar
-  que cada mutação morre sem confiar no histórico do git.
+nota: este ficheiro é GERADO. O que está em "Saída observada" é a
+  saída real do comando, escrita pelo script — ninguém escreve aqui à
+  mão. A primeira ronda afirmava uma prova por mutação que não deixou
+  rasto, e duas personas provaram que três testes não detectavam as
+  mutações que alegavam detectar. (F-10)
 ---
 
 # Prova por mutação — T008
@@ -21,6 +19,7 @@ está a mentir. A regra é: **ninguém escreve o resultado à mão.**
 
 - **Ficheiro:** `src/mailutils/signatures/renderer.py`
 - **Mutação:** `opaco = _precisa_de_fundo(self.theme)` → `opaco = False  # MUTACAO M-01`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_renderer.py -q --no-cov -k Legivel`
 - **Porque:** O tema escuro volta a não levar o fundo: texto #f0f0f0 sobre o branco do cliente dá 1.14:1 e a assinatura fica invisível. Era o F-02.
 - **Saída observada:**
@@ -36,6 +35,7 @@ FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_tema_
 
 - **Ficheiro:** `src/mailutils/signatures/renderer.py`
 - **Mutação:** `f'{cor_tabela} style="{estilo}">'` → `'style="{estilo}">'`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_renderer.py -q --no-cov -k Legivel`
 - **Porque:** Fica o `background` no `<div>` mas sai o `bgcolor` do `<table>`. O Word engine do Outlook ignora `background` num div, pelo que a assinatura continua invisível no Outlook — que é onde a maior parte das pessoas a vê.
 - **Saída observada:**
@@ -51,6 +51,7 @@ FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_tema_
 
 - **Ficheiro:** `src/mailutils/main.py`
 - **Mutação:** `if not ja_posto and not request.url.path.endswith(_CONTEXTLESS_SUFFIXES):` → `if not request.url.path.endswith(_CONTEXTLESS_SUFFIXES):`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest e2e -q --no-cov -k tema`
 - **Porque:** O middleware volta a sobrescrever o cookie de tema que a rota punha, e o botão de tema deixa de funcionar. Duas respostas com `Set-Cookie` para o mesmo nome, e a última ganha.
 - **Saída observada:**
@@ -58,7 +59,7 @@ FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_tema_
 ```
 FAILED e2e/test_fluxo_completo.py::test_tema_claro_por_clique - playwright._i...
 FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
-2 failed, 9 deselected in 23.84s
+2 failed, 9 deselected in 23.46s
     (24s)
 ```
 
@@ -66,6 +67,7 @@ FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
 
 - **Ficheiro:** `src/mailutils/static/app.js`
 - **Mutação:** `if (fill) fill.setAttribute("data-score", vazio ? 0 : score.score);` → `if (fill) fill.setAttribute("data-score", 0);`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest e2e -q --no-cov -k score_actualiza`
 - **Porque:** O caminho de actualização do score em JavaScript passa a ser inoperante para o número, e o teste passa a provar que o score não muda. Era o F-05, e era o caminho que uma revisão encontrou morto com a suite toda verde.
 - **Saída observada:**
@@ -73,7 +75,7 @@ FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
 ```
 =========================== short test summary info ============================
 FAILED e2e/test_fluxo_completo.py::test_o_score_actualiza_enquanto_se_escreve
-1 failed, 10 deselected in 3.71s
+1 failed, 10 deselected in 3.33s
     (4s)
 ```
 
@@ -81,6 +83,7 @@ FAILED e2e/test_fluxo_completo.py::test_o_score_actualiza_enquanto_se_escreve
 
 - **Ficheiro:** `src/mailutils/analyzer/scoring.py`
 - **Mutação:** `score = max(0, min(100, total))` → `score = max(0, min(100, total)) * 1.0`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_spam.py -q --no-cov`
 - **Porque:** O score passa a fraccionário. A barra de score é uma regra de CSS por valor, e `data-score="20.0"` não casa com nenhuma das 101. A revisão provou que a suíte HTTP inteira passava com isto. Era o F-06, e era a garantia que eu escrevi e que não existia.
 - **Saída observada:**
@@ -88,7 +91,7 @@ FAILED e2e/test_fluxo_completo.py::test_o_score_actualiza_enquanto_se_escreve
 ```
 =========================== short test summary info ============================
 FAILED tests/test_spam.py::TestOScoreEInteiro::test_o_analisador_da_um_int - ...
-1 failed, 60 passed in 0.11s
+1 failed, 60 passed in 0.10s
     (1s)
 ```
 
@@ -96,6 +99,7 @@ FAILED tests/test_spam.py::TestOScoreEInteiro::test_o_analisador_da_um_int - ...
 
 - **Ficheiro:** `src/mailutils/static/app.css`
 - **Mutação:** `.score__fill[data-score="20"] { width: 20%; }` → `(removido)`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest e2e -q --no-cov -k discriminante`
 - **Porque:** Uma das 101 regras da barra desaparece. O teste que media o score zero continuava verde, porque `width: 0` na regra base dá o mesmo pixel. Era o F-07, e é porque o teste discriminante mede um score de 20.
 - **Saída observada:**
@@ -103,14 +107,15 @@ FAILED tests/test_spam.py::TestOScoreEInteiro::test_o_analisador_da_um_int - ...
 ```
 =========================== short test summary info ============================
 FAILED e2e/test_fluxo_completo.py::test_a_barra_e_discriminante_com_um_score_nao_zero
-1 failed, 10 deselected in 4.23s
-    (5s)
+1 failed, 10 deselected in 3.89s
+    (4s)
 ```
 
 ### M-07 — F-08
 
 - **Ficheiro:** `src/mailutils/signatures/routes.py`
 - **Mutação:** `" style-src 'unsafe-inline'; img-src https: http:; base-uri 'none';"` → `" img-src https: http:; base-uri 'none';"`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_editor_flows.py -q --no-cov -k Exportado`
 - **Porque:** A CSP do documento exportado volta a `default-src 'none'` sem `style-src`, e o ficheiro que o utilizador descarrega para conferir deixa de se mostrar. Era o F-08.
 - **Saída observada:**
@@ -118,14 +123,15 @@ FAILED e2e/test_fluxo_completo.py::test_a_barra_e_discriminante_com_um_score_nao
 ```
 =========================== short test summary info ============================
 FAILED tests/test_editor_flows.py::TestOFicheiroExportadoMostraOSeusEstilos::test_permite_estilos_inline
-1 failed, 3 passed, 56 deselected in 2.08s
-    (3s)
+1 failed, 3 passed, 56 deselected in 1.22s
+    (2s)
 ```
 
 ### M-08 — F-12
 
 - **Ficheiro:** `src/mailutils/signatures/spam.py`
 - **Mutação:** `"vazio": not visible_text and not srcs and not hrefs,` → `"vazio": False,`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_editor_flows.py -q --no-cov -k vazia`
 - **Porque:** O editor volta a mostrar «0 / 100 SEGURO» com selo verde para um formulário em branco. Era o F-12, e o teste que o apanhava afirmava o contrário — a inversão ficou escrita no docstring dele.
 - **Saída observada:**
@@ -133,8 +139,8 @@ FAILED tests/test_editor_flows.py::TestOFicheiroExportadoMostraOSeusEstilos::tes
 ```
 =========================== short test summary info ============================
 FAILED tests/test_editor_flows.py::TestEditor::test_uma_assinatura_vazia_nao_promete_que_e_segura
-1 failed, 59 deselected in 0.67s
-    (2s)
+1 failed, 59 deselected in 0.29s
+    (1s)
 ```
 
 ### M-09 — F-11
@@ -143,6 +149,7 @@ FAILED tests/test_editor_flows.py::TestEditor::test_uma_assinatura_vazia_nao_pro
 - **Mutação:** `.hidden { display: none; }` → `.hidden { display: none; }
 
 .orfão-m09 { color: red; }`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_browser_regressions.py -q --no-cov -k Orfao`
 - **Porque:** Um selector novo que nada referencia. O teste passa a apanhar selectores mortos, que era o F-11.
 - **Saída observada:**
@@ -150,24 +157,7 @@ FAILED tests/test_editor_flows.py::TestEditor::test_uma_assinatura_vazia_nao_pro
 ```
 =========================== short test summary info ============================
 FAILED tests/test_browser_regressions.py::TestNenhumSelectorOrfaoEmAppCss::test_todo_o_selector_definido_e_usado
-1 failed, 1 passed, 18 deselected in 0.05s
-    (1s)
-```
-
-### M-10 — F-03
-
-- **Ficheiro:** `.github/workflows/ci.yml`
-- **Mutação:** `- name: Install browser
-        run: python3 -m playwright install --with-deps chromium` → `- name: Install browser
-        run: true  # MUTACAO M-10`
-- **Comando:** `python3 -m pytest tests/test_browser_regressions.py -q --no-cov -k ci`
-- **Porque:** A CI volta a não instalar o browser, e `make check` fica vermelho no primeiro run. Era o F-03.
-- **Saída observada:**
-
-```
-=========================== short test summary info ============================
-FAILED tests/test_browser_regressions.py::TestAInstalaOCiTemDeTerTudo::test_toda_a_ci_que_corre_o_gate_instala_o_browser
-1 failed, 2 passed, 17 deselected in 0.05s
+1 failed, 1 passed, 19 deselected in 0.05s
     (1s)
 ```
 
@@ -175,6 +165,7 @@ FAILED tests/test_browser_regressions.py::TestAInstalaOCiTemDeTerTudo::test_toda
 
 - **Ficheiro:** `src/mailutils/signatures/routes.py`
 - **Mutação:** `"Content-Security-Policy": CSP_PREVIEW,` → `# MUTACAO M-11: um <meta> no documento nao chega`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest e2e -q --no-cov -k preview`
 - **Porque:** A rota deixa de pôr a CSP no header e o preview volta a herdar a `style-src 'self'` da aplicação: a assinatura aparece em Times New Roman, a preto. Um `<meta http-equiv>` no documento não chega, porque as políticas juntam-se e a mais restritiva ganha. Era o F-04, e a primeira versão da minha correcção cometia exactamente este erro.
 - **Saída observada:**
@@ -182,7 +173,7 @@ FAILED tests/test_browser_regressions.py::TestAInstalaOCiTemDeTerTudo::test_toda
 ```
 =========================== short test summary info ============================
 FAILED e2e/test_fluxo_completo.py::test_o_preview_mostra_a_assinatura_como_ela_sai
-1 failed, 10 deselected in 4.65s
+1 failed, 10 deselected in 4.63s
     (5s)
 ```
 
@@ -190,6 +181,7 @@ FAILED e2e/test_fluxo_completo.py::test_o_preview_mostra_a_assinatura_como_ela_s
 
 - **Ficheiro:** `src/mailutils/templates/_tema.html`
 - **Mutação:** `value="{{ sessao.csrf_token if sessao else csrf }}">` → `value="token-falso" data-mutacao="M-12">`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest e2e -q --no-cov -k tema`
 - **Porque:** O botão de tema passa a mandar um token de CSRF falso. Sem token válido o POST é recusado, e um utilizador fica com um botão que não faz nada — que era o sintoma exacto do F-01, em que nada no ecrã escrevia o cookie.
 - **Saída observada:**
@@ -197,14 +189,15 @@ FAILED e2e/test_fluxo_completo.py::test_o_preview_mostra_a_assinatura_como_ela_s
 ```
 FAILED e2e/test_fluxo_completo.py::test_tema_claro_por_clique - playwright._i...
 FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
-2 failed, 9 deselected in 24.13s
-    (25s)
+2 failed, 9 deselected in 23.92s
+    (24s)
 ```
 
 ### M-13 — F-17
 
 - **Ficheiro:** `src/mailutils/mailer.py`
 - **Mutação:** `message["Date"] = formatdate(localtime=True)` → `# MUTACAO M-13: sem Date, o Amavis alerta e a pontuacao sobe`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_mailer_and_images.py -q --no-cov -k date`
 - **Porque:** A mensagem fica sem `Date`, que o RFC 5322 torna obrigatório. O Amavis injecta `X-Amavis-Alert` e o Gmail e a Microsoft sobem a pontuação logo à entrada. Foi o primeiro sintoma de um email que não chegava. (F-17)
 - **Saída observada:**
@@ -212,7 +205,7 @@ FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
 ```
 =========================== short test summary info ============================
 FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test_tem_date
-1 failed, 51 deselected in 0.06s
+1 failed, 53 deselected in 0.06s
     (1s)
 ```
 
@@ -220,6 +213,7 @@ FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test
 
 - **Ficheiro:** `src/mailutils/mailer.py`
 - **Mutação:** `make_msgid(domain=_dominio_de(settings.mail_from))` → `make_msgid()  # MUTACAO M-14`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_mailer_and_images.py -q --no-cov -k message_id`
 - **Porque:** O `Message-ID` deixa de levar o domínio do remetente e passa a usar o `fqdn` da máquina. Num servidor de rede interna isso é `.lan`, e um domínio não roteável é penalizado de imediato, porque parece um script mal configurado. (F-17)
 - **Saída observada:**
@@ -227,7 +221,7 @@ FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test
 ```
 FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test_o_message_id_usa_o_dominio_do_remetente
 FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test_o_message_id_segue_o_remetente_e_nao_a_maquina
-2 failed, 50 deselected in 0.07s
+2 failed, 52 deselected in 0.08s
     (1s)
 ```
 
@@ -235,6 +229,7 @@ FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test
 
 - **Ficheiro:** `src/mailutils/mailer.py`
 - **Mutação:** `del parte["MIME-Version"]` → `pass  # MUTACAO M-15`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_mailer_and_images.py -q --no-cov -k mime`
 - **Porque:** A `MIME-Version` volta a entrar na parte `text/html`, que é o que o `add_alternative` do stdlib faz e é MIME inválido: dentro dos limites, aquele cabeçalho pertence só à mensagem. (F-17)
 - **Saída observada:**
@@ -242,7 +237,7 @@ FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test
 ```
 =========================== short test summary info ============================
 FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test_a_mime_version_so_existe_no_topo
-1 failed, 51 deselected in 0.06s
+1 failed, 53 deselected in 0.06s
     (1s)
 ```
 
@@ -250,6 +245,7 @@ FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test
 
 - **Ficheiro:** `src/mailutils/signatures/renderer.py`
 - **Mutação:** `render = _RENDERERS.get(data.layout, _render_stack)` → `render = _RENDERERS[DEFAULT_LAYOUT]`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_renderer.py tests/test_editor_flows.py -q --no-cov`
 - **Porque:** A escolha da estrutura deixa de ser lida e todas renderizam vertical. O selector da interface continua a marcar a estrutura escolhida, o campo escondido continua a ir no formulário, e a coluna `layout` continua a gravar o que o utilizador escolheu — a falha só aparece no email. É o T013 inteiro a partir-se sem um único sintoma na interface.
 - **Saída observada:**
@@ -257,14 +253,15 @@ FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test
 ```
 FAILED tests/test_editor_flows.py::TestEstruturaDaAssinatura::test_toda_a_estrutura_chega_ao_html_exportado
 FAILED tests/test_editor_flows.py::TestEstruturaDaAssinatura::test_as_estruturas_sao_visivelmente_diferentes
-7 failed, 254 passed in 23.09s
-    (24s)
+7 failed, 254 passed in 20.76s
+    (22s)
 ```
 
 ### M-17 — F-03
 
 - **Ficheiro:** `src/mailutils/signatures/renderer.py`
 - **Mutação:** `muted="#aec4d9",` → `muted="#2a3f52",`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_renderer.py -q --no-cov -k Legivel`
 - **Porque:** O `muted` do tema `navy` passa de 9.69:1 para 1.6:1 sobre o seu próprio fundo. Cargo, empresa e morada tornam-se ilegíveis. Esta mutação prova que os temas novos do T013 entram no gate de contraste **sem** que ninguém escreva um teste novo: `TestAssinaturaLegivelNoClienteDeEmail` está parametrizado sobre `sorted(THEMES)`. Foi o que permitiu escolher as cores a calcular em vez de a olho.
 - **Saída observada:**
@@ -280,6 +277,7 @@ FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_todo_
 
 - **Ficheiro:** `src/mailutils/lists/service.py`
 - **Mutação:** `"   AND confirmed_at IS NOT NULL"` → `"   AND 1=1"`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_lists.py -q --no-cov -k InvarianteCentral`
 - **Porque:** A unica clausula que separa uma lista de contactos de um relay de email bombing passa a ser `1=1`. Todos os pendentes — os que receberam um codigo de confirmacao e nunca responderam — entram no envio. O produto passa a enviar para quem nao pediu, usando o endereco de outra pessoa como remetente. E a mutacao que o `CLAUDE.md` proibe em letras: `confirmed_at IS NULL` nao entra no SELECT, em nenhum caminho.
 - **Saída observada:**
@@ -287,14 +285,15 @@ FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_todo_
 ```
 FAILED tests/test_lists.py::TestInvarianteCentral::test_confirmado_passa_a_ser_destinatario
 FAILED tests/test_lists.py::TestInvarianteCentral::test_descadenciado_deixa_de_ser_destinatario
-4 failed, 2 passed, 65 deselected in 2.49s
-    (3s)
+4 failed, 2 passed, 65 deselected in 1.58s
+    (2s)
 ```
 
 ### M-19 — F-01
 
 - **Ficheiro:** `src/mailutils/lists/service.py`
-- **Mutação:** `if ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations:` → `if ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations + 10**6:`
+- **Mutação:** `and ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations` → `and ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations + 10**6`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_lists.py -q --no-cov -k AntiAbuso`
 - **Porque:** O tecto de confirmacoes por confirmar deixa de existir. Um utilizador com sessao importa cinquenta mil enderecos e pede os codigos todos de uma vez. E o tecto anti-abuso que o `CLAUDE.md` diz ser feature e nao detalhe de implementacao.
 - **Saída observada:**
@@ -302,14 +301,15 @@ FAILED tests/test_lists.py::TestInvarianteCentral::test_descadenciado_deixa_de_s
 ```
 FAILED tests/test_lists.py::TestLimitesAntiAbuso::test_teto_de_pendentes_acumula_entre_listas
 FAILED tests/test_lists.py::TestLimitesAntiAbuso::test_confirmar_liberta_uma_vaga
-3 failed, 4 passed, 64 deselected in 1.87s
-    (3s)
+3 failed, 4 passed, 64 deselected in 1.59s
+    (2s)
 ```
 
 ### M-20 — F-01
 
 - **Ficheiro:** `src/mailutils/web.py`
 - **Mutação:** `and dados.get("a") == address_id` → `and dados.get("a") is not None  # MUTACAO M-20`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_lists.py -q --no-cov -k LinkAssinado`
 - **Porque:** A verificacao de posse do token desaparece: o `address_id` deixa de ser comparado com o do payload assinado. O link de Ana passa a confirmar o endereco do Bruno. E o B-04 desta mesma revisao, que era a razao de o token existir.
 - **Saída observada:**
@@ -317,7 +317,7 @@ FAILED tests/test_lists.py::TestLimitesAntiAbuso::test_confirmar_liberta_uma_vag
 ```
 =========================== short test summary info ============================
 FAILED tests/test_lists.py::TestLinkAssinado::test_o_token_nao_abre_outro_endereco
-1 failed, 10 passed, 60 deselected in 3.26s
+1 failed, 10 passed, 60 deselected in 2.79s
     (4s)
 ```
 
@@ -325,6 +325,7 @@ FAILED tests/test_lists.py::TestLinkAssinado::test_o_token_nao_abre_outro_endere
 
 - **Ficheiro:** `src/mailutils/lists/service.py`
 - **Mutação:** `" SET unsubscribed_at = NULL, confirmed_at = NULL,"` → `" SET unsubscribed_at = NULL,"`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_lists.py -q --no-cov -k BypassConsentimento`
 - **Porque:** Repor uma inscricao volta a ser `unsubscribed_at = NULL` e mais nada. O endereco deixa de estar em `destinatarios()` quando se cancela e volta sem ninguem confirmar quando o dono da lista clica em 'Repor'. E o M-01: o produto a decidir por quem se cancelou.
 - **Saída observada:**
@@ -338,6 +339,7 @@ FAILED tests/test_lists.py::TestLinkAssinado::test_o_token_nao_abre_outro_endere
 
 - **Ficheiro:** `src/mailutils/web.py`
 - **Mutação:** `and dados.get("l") == list_id` → `and dados.get("l") is not None  # MUTACAO M-22`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_lists.py -q --no-cov -k token_da_lista_a`
 - **Porque:** A lista deixa de estar no token. Um link de confirmacao da lista A passa a abrir a rota da lista B. So a seguranca que sobra e a de `address_id` estar filtrado por lista — e isso e seguro por acidente do esquema, nao por decisao.
 - **Saída observada:**
@@ -353,6 +355,7 @@ FAILED tests/test_lists.py::TestLinkAssinado::test_o_token_da_lista_a_nao_verifi
 
 - **Ficheiro:** `src/mailutils/signatures/renderer.py`
 - **Mutação:** `f'display:inline-block;">'` → `f'display:inline;">'`
+- **Estado:** `morreu`
 - **Comando:** `python3 -m pytest tests/test_renderer.py -q --no-cov -k StackNaoMudou`
 - **Porque:** Muda UMA palavra e portanto alguns bytes do HTML do `stack`. Esta e a mutacao que provou que o T013 afirmava 'byte a byte' sem nada que o provasse: os 744 testes passavam. Agora morre em `tests/golden/stack.html`.
 - **Saída observada:**
@@ -360,8 +363,8 @@ FAILED tests/test_lists.py::TestLinkAssinado::test_o_token_da_lista_a_nao_verifi
 ```
 =========================== short test summary info ============================
 FAILED tests/test_renderer.py::TestStackNaoMudouUmByte::test_o_html_do_stack_e_o_golden
-1 failed, 1 passed, 199 deselected in 0.08s
+1 failed, 1 passed, 199 deselected in 0.09s
     (1s)
 ```
 
-**Total: 23 mutações. Sem escape: nenhuma.**
+**Total: 22 mutações. Sem escape: nenhuma. Avulsas (a âncora já não existe no ficheiro): nenhuma.**
