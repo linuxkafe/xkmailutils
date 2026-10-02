@@ -57,6 +57,20 @@ else
     V=""; A=""; E=""; N=""; G=""
 fi
 
+tem_rede_no_host() {
+    curl -sI --max-time 8 https://pypi.org/simple/ >/dev/null 2>&1
+}
+
+tem_rede_dentro_de_um_contentor() {
+    timeout 30 $compose run --rm --no-deps --entrypoint python3 mailutils -c \
+        'import socket
+try:
+    socket.create_connection(("pypi.org", 443), timeout=8).close()
+except OSError:
+    raise SystemExit(1)
+' >/dev/null 2>&1
+}
+
 passo()  { printf "%s==>%s %s%s%s\n" "$G" "$N" "$G" "$1" "$N"; }
 aviso() { printf "%saviso:%s %s\n" "$A" "$N" "$1"; }
 erro()  { printf "%serro:%s %s\n" "$E" "$N" "$1" >&2; }
@@ -280,6 +294,42 @@ if estado != "ok":
         || falhar "o git pull deu conflito ou falhou. Nada foi reconstruido e a aplicacao continua na versao anterior."
 
     passo "Reconstruir e arrancar"
+
+    # O build faz `pip install`, que precisa de rede **dentro** do contentor de
+    # build. O host pode ter rede na mesma — e teve: `apt update` funcionava
+    # enquanto o `pip install` devolvia `Errno 101 Network is unreachable`. São
+    # duas redes diferentes, e sem esta verificação o `--actualizar` passa dois
+    # minutos e meio a ver o PyPI não responder antes de dizer alguma coisa.
+    #
+    # O teste é feito de dentro de um contentor, não do host, porque é o que o
+    # build usa. E compara com o host, porque a diferença entre os dois é
+    # exactamente o diagnóstico: se o host responde e o contentor não, o
+    # problema é o NAT do Docker, e nenhuma quantidade de repetir o comando o
+    # resolve.
+    if ! tem_rede_dentro_de_um_contentor; then
+        if tem_rede_no_host; then
+            erro "o host tem rede, mas um contentor nao."
+            erro "O build precisa de rede dentro do contentor. Quando falha aqui,"
+            erro "o `pip install` da sempre 'Network is unreachable' ao fim de"
+            erro "uns dois minutos de retentativas."
+            erro ""
+            erro "e quase sempre o NAT do bridge do Docker. Para confirmar:"
+            erro "  docker run --rm alpine ping -c1 8.8.8.8"
+            erro ""
+            erro "para resolver, no host (precisa de_root):"
+            erro "  sysctl -w net.ipv4.ip_forward=1"
+            erro "  iptables -t nat -A POSTROUTING -s 172.17.0.0/16 ! -o docker0 -j MASQUERADE"
+            erro ""
+            erro "Se a sua rede nao for a 172.17.0.0/16, veja o gateway real com:"
+            erro "  docker network inspect bridge | grep -i gateway"
+            falhar "a base esta copiada e intacta; o contentor actual continua a correr"
+        else
+            erro "nem o host tem rede. O build vai falhar no `pip install`."
+            erro "a copia de seguranca ja esta feita; o contentor actual continua a correr."
+            falhar "restabeleca a rede e repita"
+        fi
+    fi
+
     $compose up -d --build || falhar "'docker compose up -d --build' falhou"
 
     printf "\n%s  Actualizado.%s\n" "$G" "$N"
