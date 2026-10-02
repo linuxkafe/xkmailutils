@@ -6,7 +6,7 @@ prioridade: P1
 status: done
 criado: 2026-10-02
 depende_de: T013
-revisao: "aes/peer-reviews/T014/"
+revisao: "aes/peer-reviews/T014/ — REJECT na 1a ronda; 14 findings fechados, M-10 aberto"
 ---
 
 # T014 — Listas de destinatários
@@ -146,10 +146,26 @@ Registado porque quem chegar ao código e assume que está lá vai errar:
 
 | Item | FR | Onde está a verdade |
 |---|---|---|
-| **Link de descadência assinado** | FR-6.7 | `service.descadenciar(address_id)` **existe e funciona**, mas não há rota nem token assinado. A docstring da função fala num token no caminho que **não existe** — é a afirmação não verificada mais óbvia que ficou em pé |
-| **`List-Unsubscribe` e one-click** | FR-6.8 | Não implementado. Só faz sentido com o T015 |
-| **E2E do caminho de confirmação** | NFR-15 | O suite não toca em `/listas` |
+| **`List-Unsubscribe` e one-click** | FR-6.8 | Não implementado, e marcado `DRAFT`. Só faz sentido com o T015 |
+| **E2E do caminho de confirmação** | NFR-15 | O suite não toca em `/listas`. O caminho está coberto por HTTP, sem browser |
 | **Envio real por SMTP** | FR-7 | `send_confirmation` é interceptado em todos os testes |
+| **HTML dourado do `stack`** | M-10 | Afirmei "byte a byte" sem um teste que compare bytes. A afirmação é verdadeira — as personas verificaram — mas não é provada |
+
+### O que a revisão de 2026-10-02 mudou
+
+Quatro personas, REJECT x4, 30 findings. Três BLOCKER:
+
+1. **A destinatária não conseguia confirmar.** O email não tinha link e a rota
+   exigia sessão do dono. O produto era literalmente inutilizável para a pessoa
+   para quem foi feito.
+2. **IDOR** em `/confirmar?address_id=N`: lia o email de qualquer lista.
+3. **Duas docstrings** afirmavam um token assinado que não existia.
+
+E **FR-6.7 e FR-6.8 marcadas `IMPLEMENTADO` sem uma linha de código** — erro meu,
+um `replace` em bloco. O meu próprio ticket dizia `DRAFT` aos dois, ao lado.
+
+Está em `aes/peer-reviews/T014/`, com as condições de fecho de cada finding e
+o `human-validation.sh` que ainda ninguém com olhos num Thunderbird correu.
 
 ## Risco
 

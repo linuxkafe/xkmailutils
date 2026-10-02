@@ -6,10 +6,23 @@
 
 {% if aviso_chave %}
   {% if aviso_chave == 'confirmacao' %}
-  <p class="aviso" role="status">
-    Códigos enviados para {{ n or 0 }} endereço(s). Quem tiver de confirmar
-    recebeu um email com um código de 6 dígitos.
-  </p>
+  {# M-08: `n` nunca chegava ao contexto e a soma incluía quem não recebeu
+     nada. As quatro contagens chegam já convertidas em inteiros, pela rota —
+     ver `_resumo_do_pedido`. #}
+  <div class="aviso" role="status">
+    <p><strong>{{ enviados }}</strong> código(s) enviado(s).</p>
+    <ul class="lista-plana small">
+      {% if ja_confirmados %}<li>{{ ja_confirmados }} já estava(m) confirmado(s).</li>{% endif %}
+      {% if em_cooldown %}<li>{{ em_cooldown }} em período de espera — pedido há menos de um minuto.</li>{% endif %}
+      {% if excedidos %}<li>{{ excedidos }} não entraram: o limite de confirmações por confirmar foi atingido.</li>{% endif %}
+      {% if not ja_confirmados and not em_cooldown and not excedidos and not enviados %}
+      <li>Nenhum endereço foi escolhido.</li>{% endif %}
+    </ul>
+    {% if enviados %}
+    <p>Quem recebeu o código tem {{ 10 }} minutos para confirmar. Sem
+       confirmação, o endereço não entra em nenhum envio.</p>
+    {% endif %}
+  </div>
   {% else %}
   <p class="aviso" role="status">{{ mensagens[aviso_chave] }}</p>
   {% endif %}
@@ -22,9 +35,17 @@
 {% if importacao %}
 <div class="card" role="status">
   <h2>Importação</h2>
-  <p>{{ importacao.importados }} importados,
-     {{ importacao.ja_existentes }} já estavam na lista,
-     {{ importacao.total_rejeitado }} rejeitados.</p>
+  <p>
+    {{ importacao.importados }} importados,
+    {{ importacao.ja_existentes }} já estavam na lista,
+    {{ importacao.total_rejeitado }} rejeitados.
+  </p>
+  {% if importacao.total_rejeitado and importacao.total_rejeitado > 4 %}
+  <p class="erro" role="alert">
+    {{ importacao.total_rejeitado }} linha(s) do ficheiro não entraram na lista.
+    Nenhum dos endereços abaixo recebeu um código e nenhum vai receber.
+  </p>
+  {% endif %}
   {% if importacao.invalidos %}
   <details>
     <summary>Ver o que não entrou</summary>

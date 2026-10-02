@@ -4,12 +4,18 @@ A regra deste módulo cabe numa linha e está repetida em três sítios de prop�
 
     **Um endereço só entra num envio depois de `confirmed_at` estar preenchido.**
 
-`confirmed_at IS NOT NULL` aparece em `destinatarios()`, que é a **única**
-função do projecto que devolve destinatários para envio. Não há segunda
+`destinatarios()` é a **única função do projecto que devolve endereços para
+envio**, e o seu `SELECT` exige `confirmed_at IS NOT NULL`. Não há segunda
 consulta, não há atalho para um envio agendado, não há caminho rápido. Um
-endereço por confirmar é um endereço que alguém escreveu e que a pessoa do
-outro lado não pediu para receber — e a diferença entre "lista de contactos" e
-"relay de email bombing" está exactamente nessa coluna.
+endereço por confirmar é um endereço que alguém escreveu e que a pessoa do outro
+lado não pediu para receber — e a diferença entre "lista de contactos" e "relay
+de email bombing" está exactamente nessa coluna.
+
+O predicado aparece também noutros sítios deste ficheiro, todos **contagens
+para a interface** (`listas_do_utilizador`, `pendentes_por_utilizador`). A
+afirmação certa não é "aparece uma vez", que o `grep` não sustenta; é que a
+única função que devolve endereços para envio tem a condição. A revisão T014
+achou a diferença.
 
 Porquê as confirmações vivem em `list_addresses` e não em `otp_codes`: a tabela
 `otp_codes` tem `user_id NOT NULL` e está ligada a um dispositivo, porque é o
@@ -24,8 +30,9 @@ from __future__ import annotations
 import csv
 import io
 import sqlite3
+from typing import Any
 
-from .. import mailer, security
+from .. import mailer, security, web
 from ..config import Settings
 from ..db import transaction
 
@@ -114,6 +121,26 @@ def listas_do_utilizador(conn: sqlite3.Connection, user_id: int) -> list[sqlite3
             (user_id,),
         )
     )
+
+
+def lista_publico(conn: sqlite3.Connection, list_id: int) -> dict[str, Any] | None:
+    """Nome e contagem de uma lista, **sem**_validação de dono.
+
+    Para as páginas públicas de confirmação e descadência. O que não sai daqui
+    são os endereços: `SELECT name, (SELECT COUNT(*)…)` e nunca a lista de
+    destinatários. Quem confirma vê o nome da lista em que se está a inscrever —
+    é a única coisa de que precisa — e mais nada.
+    """
+    linha = conn.execute(
+        "SELECT id, name, ("
+        "  SELECT COUNT(*) FROM list_addresses a"
+        "  WHERE a.list_id = recipient_lists.id AND a.confirmed_at IS NOT NULL"
+        "   AND a.unsubscribed_at IS NULL"
+        " ) AS confirmados"
+        " FROM recipient_lists WHERE id = ?",
+        (list_id,),
+    ).fetchone()
+    return dict(linha) if linha else None
 
 
 def eliminar_lista(conn: sqlite3.Connection, user_id: int, list_id: int) -> bool:
@@ -225,10 +252,19 @@ class ResultadoImportacao:
         self.importados: int = 0
         self.ja_existentes: int = 0
         self.invalidos: list[str] = []
+        #: Linhas do ficheiro que não entraram na lista, por qualquer razão.
+        #:
+        #: É um contador à parte porque `len(invalidos)` **não** é o mesmo
+        #: número: um `break` por tecto acrescenta uma string de causa e as
+        #: linhas que nunca foram examinadas não acrescentam nenhuma. Com 300
+        #: linhas e um tecto de 10, a interface dizia "1 rejeitado" e 290
+        #: endereços tinham desaparecido sem que ninguém soubesse. (M-07)
+        self.nao_importadas: int = 0
 
     @property
     def total_rejeitado(self) -> int:
-        return len(self.invalidos)
+        """O que a interface diz. Linhas perdidas, não mensagens de erro."""
+        return self.nao_importadas
 
 
 def _dividir(linha: str) -> list[str]:
@@ -256,6 +292,23 @@ def _parece_cabecalho(linha: str) -> bool:
     tem_rotulo = any(c in _COLUNAS_EMAIL or c in _COLUNAS_NOME for c in celulas)
     tem_email = any(security.is_valid_email(c) for c in celulas)
     return tem_rotulo and not tem_email
+
+
+def _indice_unico(celulas: list[str]) -> int | None:
+    """Índice a usar quando a coluna do email não existe nesta linha.
+
+    O caso é real e não é exótico: uma folha de cálculo exportada como
+    `nome,email` com a coluna `nome` vazia sai do Excel com uma coluna só, e o
+    ficheiro tem um cabeçalho que promete duas. Sem isto o operador vê "0
+    importados" e nenhuma razão que o esclareça — o que era exactamente o que a
+    revisão do T014/aboutou no relatório de importação.
+
+    Só quando a linha tem **uma** célula. Com mais, adivinhar qual é o email é
+    frequentemente errado, e é melhor recusar.
+    """
+    if len(celulas) == 1:
+        return 0
+    return None
 
 
 def _indice_da_coluna(cabecalho: list[str], nomes: tuple[str, ...]) -> int | None:
@@ -332,16 +385,19 @@ def importar_csv(
         if not linha.strip():
             continue
         celulas = _dividir(linha)
-        if col_email >= len(celulas):
+        indice_email = col_email if col_email < len(celulas) else _indice_unico(celulas)
+        if indice_email is None:
             resultado.invalidos.append(f"{linha[:60]} — sem coluna de email")
+            resultado.nao_importadas += 1
             continue
-        candidato = celulas[col_email].strip()
+        candidato = celulas[indice_email].strip()
         nome = ""
         if col_nome is not None and col_nome < len(celulas):
             nome = celulas[col_nome].strip()
         normalizado = security.normalise_email(candidato)
         if not security.is_valid_email(normalizado):
             resultado.invalidos.append(f"{candidato[:60]} — email inválido")
+            resultado.nao_importadas += 1
             continue
         if normalizado in ja_presentes:
             resultado.ja_existentes += 1
@@ -349,7 +405,8 @@ def importar_csv(
         if ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations:
             resultado.invalidos.append(
                 f"interrompido — chegou ao teto de "
-                f"{settings.max_pending_confirmations} confirmações por confirmar"
+                f"{settings.max_pending_confirmations} confirmações por confirmar. "
+                f"Peça os códigos aos que já lá estão e volte a importar."
             )
             break
         if ja_na_lista + len(a_inserir) >= settings.max_list_size:
@@ -367,6 +424,28 @@ def importar_csv(
                 a_inserir,
             )
         resultado.importados = len(a_inserir)
+
+    # As linhas nunca examinadas contam como perdidas. `ja_existentes` é uma
+    # terceira categoria — a linha foi examinada e o endereço já lá estava — e
+    # o operador vê isso em separado, porque "já estava na lista" não é
+    # "rejeitado".
+    # O total vem do ficheiro, e não de um contador de linhas lidas: o `break`
+    # deixa de ler, e era exactamente por isso que a primeira versão dizia
+    # "1 rejeitado" com 289 linhas que ninguém tinha lido e ninguém via.
+    total_linhas = sum(1 for linha in corpo if linha.strip())
+    # Cada linha lida cai numa de quatro categorias: entrou, já estava, era
+    # inválida, ou nunca chegou a ser examinada porque o `break` parou antes.
+    # A quinta é a única que este contador soma, e é a que a primeira versão
+    # não contava — dizia "1 rejeitado" com 290 endereços em silêncio.
+    nao_analisadas = (
+        total_linhas - resultado.nao_importadas - resultado.ja_existentes - resultado.importados
+    )
+    if nao_analisadas > 0:
+        resultado.nao_importadas += nao_analisadas
+        resultado.invalidos.append(
+            f"{nao_analisadas} linha(s) não analisadas — a importação parou por "
+            f"limite. Nenhum dos endereços abaixo entrou na lista."
+        )
 
     return resultado
 
@@ -454,10 +533,38 @@ def pedir_confirmacao(
                 " WHERE id = ?",
                 (security.hash_otp(codigo), expira, security.iso(agora), address_id),
             )
-        mailer.send_confirmation(settings, endereco["email"], codigo, nome_lista)
+        mailer.send_confirmation(
+            settings,
+            endereco["email"],
+            codigo,
+            nome_lista,
+            link_confirmar(settings, list_id, address_id),
+            link_descadenciar(settings, list_id, address_id),
+        )
         resultado["enviados"] += 1
 
     return resultado
+
+
+def link_confirmar(settings, list_id: int, address_id: int) -> str:
+    """URL de confirmação da inscrição, com token assinado.
+
+    O `address_id` **não** é lido do caminho pela rota que consome este link: vem
+    de dentro do token. É essa a razão de o token existir — sem ele, `address_id`
+    é um inteiro adivinhável e enumerar inteiros dá a lista inteira. (B-04)
+    """
+    token = web.assinar_link(
+        settings, web.PURPOSE_CONFIRM, list_id, address_id, web.LINK_SALT_CONFIRM
+    )
+    return f"{settings.base_url()}/listas/{list_id}/confirmar/{address_id}?token={token}"
+
+
+def link_descadenciar(settings, list_id: int, address_id: int) -> str:
+    """URL de descadência. Mesmo esquema, propósito e prazo diferentes."""
+    token = web.assinar_link(
+        settings, web.PURPOSE_UNSUBSCRIBE, list_id, address_id, web.LINK_SALT_UNSUBSCRIBE
+    )
+    return f"{settings.base_url()}/listas/{list_id}/descadenciar/{address_id}?token={token}"
 
 
 def confirmar(conn: sqlite3.Connection, list_id: int, address_id: int, codigo: str) -> sqlite3.Row:
@@ -521,13 +628,68 @@ def _invalidar(conn: sqlite3.Connection, address_id: int) -> None:
         )
 
 
-def descadenciar(conn: sqlite3.Connection, address_id: int) -> bool:
-    """Descadência a partir do link do email. Não exige sessão.
+def repor_inscricao(
+    conn: sqlite3.Connection, settings: Settings, user_id: int, list_id: int, address_id: int
+) -> bool:
+    """Repõe uma inscrição cancelada — e **paga por isso** com um novo código.
 
-    É reversível pelo dono da lista — e essa é a única forma de voltar atrás.
-    Sem sessão não há CSRF a validar, e por isso o token vai no caminho: um link
-    de descadência é um convite a ser clicado, e adivinhar o `address_id` não
-    deve chegar para cancelar a subscrição de outra pessoa.
+    A primeira versão fazia `unsubscribed_at = NULL` e mais nada, e devolvia o
+    endereço ao envio sem ninguém confirmar. Isto é o produto a contornar a si
+    próprio: o dono da lista decide por quem se cancelou, e a decisão de voltar
+    a receber é de quem cancelou, não de quem tem a lista na base de dados.
+
+    Por isso `confirmed_at` volta a `NULL` e `confirmation_hash` é apagado: a
+    próxima pessoa a pedir confirmação tem de passar pelo email outra vez. O
+    dono da lista pode enviar o pedido, mas não pode confirmar por outrem.
+
+    Devolve `True` se a reposição foi accionada. (M-01 da revisão T014.)
+    """
+    if lista_do_utilizador(conn, user_id, list_id) is None:
+        raise ErroLista("Lista inexistente.")
+    endereco = endereco_da_lista(conn, list_id, address_id)
+    if endereco is None or endereco["unsubscribed_at"] is None:
+        return False
+
+    codigo = security.new_otp()
+    expira = security.iso(
+        security.otp_expiry(now=security.utcnow(), ttl_minutes=settings.otp_ttl_minutes)
+    )
+    agora = security.iso(security.utcnow())
+    with transaction(conn):
+        # `confirmed_at = NULL` é a linha que fecha o bypass: sem ela o
+        # endereço voltava a `destinatarios()` sem ninguém pedir nada.
+        conn.execute(
+            "UPDATE list_addresses"
+            " SET unsubscribed_at = NULL, confirmed_at = NULL,"
+            "     confirmation_hash = ?, confirmation_expires_at = ?,"
+            "     confirmation_sent_at = ?, confirmation_attempts = 0"
+            " WHERE id = ?",
+            (security.hash_otp(codigo), expira, agora, address_id),
+        )
+    mailer.send_confirmation(
+        settings,
+        endereco["email"],
+        codigo,
+        _nome_da_lista(conn, list_id),
+        link_confirmar(settings, list_id, address_id),
+        link_descadenciar(settings, list_id, address_id),
+    )
+    return True
+
+
+def descadenciar(conn: sqlite3.Connection, address_id: int) -> bool:
+    """Descadência. Quem chama é a rota pública `/descadenciar/{address_id}`.
+
+    A verificação de token **não** está aqui, e é deliberado: `service` recebe
+    um `address_id` já autorizado e a decisão é de rota, porque a verificação
+    precisa do `settings` e de um prazo que é política. Se esta função validasse
+    o token, a próxima rota a chamar passava a validá-lo de duas maneiras
+    diferentes.
+
+    A posse continua a ser do link: `link_descadenciar` assina o `address_id` e
+    a rota recusa quando o token não bate. Sem o link esta função é perigosa de
+    chamar por engano, e por isso `__all__` e as docstrings dizem que o caminho
+    é o link.
     """
     with transaction(conn):
         cur = conn.execute(
@@ -553,9 +715,13 @@ __all__ = [
     "endereco_da_lista",
     "enderecos_da_lista",
     "importar_csv",
+    "link_confirmar",
+    "link_descadenciar",
     "lista_do_utilizador",
+    "lista_publico",
     "listas_do_utilizador",
     "pedir_confirmacao",
     "pendentes_por_utilizador",
     "remover_endereco",
+    "repor_inscricao",
 ]

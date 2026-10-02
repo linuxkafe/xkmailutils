@@ -8,13 +8,13 @@ pediu: trocar o número na URL tem de dar `404`, não a lista de outra pessoa.
 from __future__ import annotations
 
 import sqlite3
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import Response
 
-from .. import config, security
+from .. import config, security, web
 from ..db import transaction
 from ..templates import page
 from ..web import Session, csrf_is_valid, get_db, ir, require_session
@@ -91,20 +91,68 @@ def _motivo(erro: Exception) -> str:
 @router.get("/{list_id}")
 def detalhe(request: Request, conn: Db, session: Active, list_id: int) -> Response:
     try:
-        lista = _exige_lista(conn, session, list_id)
+        _exige_lista(conn, session, list_id)
     except _NaoEncontrado:
         return ir(request, "/listas?erro=lista-inexistente")
     settings = _settings(request)
     return page(
         request,
         "lista.html",
-        {
-            "lista": lista,
-            "enderecos": service.enderecos_da_lista(conn, list_id),
-            "teto": settings.max_list_size,
-            "max_tentativas": service.MAX_CONFIRM_ATTEMPTS,
-        },
+        _contexto_lista(conn, session.user_id, list_id, settings, request),
     )
+
+
+def _contexto_lista(
+    conn: sqlite3.Connection,
+    user_id: int,
+    list_id: int,
+    settings: config.Settings,
+    request: Request,
+) -> dict[str, Any]:
+    """Contexto da página de detalhe, mais o que veio na query string.
+
+    `resumo` é lido aqui e não no `page()` porque é específico desta página: o
+    aviso de confirmação só existe depois de um `POST` que pediu códigos. (M-08)
+
+    `user_id` vem explícito, e não se vai buscar aqui, porque a lista já foi
+    verificada contra a sessão pela rota e voltar a procurá-la sem o
+    `user_id` seria um `SELECT` com menos uma condição.
+    """
+    return {
+        "lista": service.lista_do_utilizador(conn, user_id, list_id),
+        "enderecos": service.enderecos_da_lista(conn, list_id),
+        "teto": settings.max_list_size,
+        "teto_confirmacoes": settings.max_pending_confirmations,
+        "max_tentativas": service.MAX_CONFIRM_ATTEMPTS,
+        **_resumo_do_pedido(request),
+    }
+
+
+def _resumo_do_pedido(request: Request) -> dict[str, int]:
+    """As quatro contagens do aviso de confirmação, já como inteiros.
+
+    A leitura do query string e a conversão acontecem **aqui** e não no
+    template. Um `{% set x = y | length > 0 %}` em Jinja aplica o filtro ao
+    resultado da comparação, não à comparação — o que dá `Undefined` sem erro
+    visível e um `<strong></strong>` vazio no ecrã. Um template que faz
+    aritmética sobre query strings é um template que tem um dia em que deixa de
+    ser verdade sem ninguém ver. (M-08)
+    """
+    bruto = request.query_params.get("resumo", "")
+    partes = bruto.split("-") if bruto else []
+    valores = []
+    for indice in range(4):
+        try:
+            valores.append(int(partes[indice]))
+        except (IndexError, ValueError):
+            valores.append(0)
+    enviados, ja_confirmados, em_cooldown, excedidos = valores
+    return {
+        "enviados": enviados,
+        "ja_confirmados": ja_confirmados,
+        "em_cooldown": em_cooldown,
+        "excedidos": excedidos,
+    }
 
 
 @router.post("/{list_id}/eliminar")
@@ -149,14 +197,14 @@ def adicionar(
     if not security.is_valid_email(normalizado):
         return ir(request, f"/listas/{list_id}?erro=email")
     if service.contar_enderecos(conn, list_id) >= settings.max_list_size:
-        return ir(request, f"/listas/{list_id}?erro=teto")
+        return ir(request, f"/listas/{list_id}?erro=teto-lista")
     # Tecto de pendentes verificado onde o pendente nasce. Ver a nota longa em
     # `service.importar_csv`: se estivesse em `pedir_confirmacao`, importar
     # endereços deixava de ser acionável e o utilizador ficava preso.
     if service.pendentes_por_utilizador(conn, session.user_id) >= (
         settings.max_pending_confirmations
     ):
-        return ir(request, f"/listas/{list_id}?erro=teto")
+        return ir(request, f"/listas/{list_id}?erro=teto-confirmacoes")
 
     agora = security.iso(security.utcnow())
     try:
@@ -207,19 +255,9 @@ async def importar(
     except service.ErroLista as erro:
         return ir(request, f"/listas/{list_id}?erro=importacao&detalhe={_motivo(erro)}")
 
-    lista = service.lista_do_utilizador(conn, session.user_id, list_id)
-    return page(
-        request,
-        "lista.html",
-        {
-            "lista": lista,
-            "enderecos": service.enderecos_da_lista(conn, list_id),
-            "teto": settings.max_list_size,
-            "max_tentativas": service.MAX_CONFIRM_ATTEMPTS,
-            "importacao": resultado,
-        },
-        status_code=200,
-    )
+    contexto = _contexto_lista(conn, session.user_id, list_id, settings, request)
+    contexto["importacao"] = resultado
+    return page(request, "lista.html", contexto, status_code=200)
 
 
 @router.post("/{list_id}/confirmar-pedido")
@@ -249,9 +287,26 @@ def pedir_confirmacao(
     except service.ErroConfirmacao:
         return ir(request, f"/listas/{list_id}?erro=confirmacao")
 
-    soma = resultado["enviados"] + resultado["ja_confirmados"]
-    soma += resultado["em_cooldown"] + resultado["excedidos"]
-    return ir(request, f"/listas/{list_id}?aviso=confirmacao&n={soma}")
+    # M-08: a soma dizia "enviados" a quem não recebeu nada. O aviso passa a
+    # descrever as quatro contagens, e a que interessa é `enviados`.
+    return ir(request, f"/listas/{list_id}?aviso=confirmacao&resumo={_resumo(resultado)}")
+
+
+def _resumo(resultado: dict[str, int]) -> str:
+    """As quatro contagens num query parameter.
+
+    Uma querystring transporta texto, não um dicionário. A alternativa — a
+    sessão — seria estado de servidor para um número, e o dono da lista recarrega
+    a página e perde-o. Serializa-se, e o template des-serializa pela
+    operação inversa.
+
+    Os números são inteiros do serviço; nada que o utilizador escreveu entra
+    aqui, e por isso não há reflex a sanitizar.
+    """
+    return (
+        f"{resultado['enviados']}-{resultado['ja_confirmados']}"
+        f"-{resultado['em_cooldown']}-{resultado['excedidos']}"
+    )
 
 
 def _ids_do_formulario(bruto: str) -> list[int]:
@@ -299,71 +354,168 @@ def repor_inscricao(
     address_id: int,
     csrf_token: Annotated[str, Form()] = "",
 ) -> Response:
-    """Repõe uma subscrição descadenciada. Só o dono da lista o pode fazer —
-    a pessoa que se descadenciou tem um caminho que não passa por aqui e não
-    precisa de sessão nenhuma."""
+    """Repõe uma subscrição cancelada, **enviando um novo código**.
+
+    Só o dono da lista pode disparar o pedido, mas não pode confirmar: a
+    confirmação vai para quem cancelou. Antes desta correcção o POST fazia só
+    `unsubscribed_at = NULL` e o endereço voltava a receber no instante, sem
+    ninguém pedir — o produto a decidir por quem cancelou. (M-01)
+    """
     if not csrf_is_valid(session, csrf_token):
         return ir(request, f"/listas/{list_id}?erro=csrf")
     try:
         _exige_lista(conn, session, list_id)
     except _NaoEncontrado:
         return ir(request, "/listas?erro=lista-inexistente")
-    with transaction(conn):
-        conn.execute(
-            "UPDATE list_addresses SET unsubscribed_at = NULL WHERE id = ? AND list_id = ?",
-            (address_id, list_id),
+    try:
+        reposto = service.repor_inscricao(
+            conn, _settings(request), session.user_id, list_id, address_id
         )
+    except service.ErroLista:
+        return ir(request, "/listas?erro=lista-inexistente")
+    if not reposto:
+        return ir(request, f"/listas/{list_id}?erro=reposicao")
     return ir(request, f"/listas/{list_id}?aviso=reposto")
 
 
-@router.post("/{list_id}/confirmar")
-def submeter_confirmacao(
+@router.get("/{list_id}/confirmar/{address_id}")
+def formulario_confirmar(
     request: Request,
     conn: Db,
-    session: Active,
     list_id: int,
-    csrf_token: Annotated[str, Form()] = "",
-    address_id: Annotated[int, Form()] = 0,
-    codigo: Annotated[str, Form()] = "",
+    address_id: int,
+    token: Annotated[str, Query()] = "",
 ) -> Response:
-    """Confirma a inscrição de um endereço.
+    """O formulário que **o destinatário** vê depois de clicar no email.
 
-    `address_id` vem do formulário **e** o endereço tem de ser da lista, por
-    isso confirmar o `address_id` de outra pessoa exigiria o código dessa
-    pessoa. O código é de uso único e apaga-se ao confirmar (ver `service`).
+    Não exige sessão, porque o destinatário não tem conta nenhuma — é essa a
+    razão de o link ser o que traz a identificação. A rota **não** confia no
+    `address_id` do caminho: o token assinado tem de concordar com ele, ou o
+    pedido é recusado. (B-04)
+
+    Antes desta correcção a rota exigia sessão do **dono da lista** e lia o
+    endereço sem verificar dono nenhum. Isto é, o dono confirmava em nome do
+    destinatário e qualquer conta da instalação lia qualquer email.
     """
-    if not csrf_is_valid(session, csrf_token):
-        return ir(request, f"/listas/{list_id}?erro=csrf")
-    try:
-        _exige_lista(conn, session, list_id)
-    except _NaoEncontrado:
-        return ir(request, "/listas?erro=lista-inexistente")
-    try:
-        service.confirmar(conn, list_id, address_id, (codigo or "").strip())
-    except service.ErroConfirmacao:
-        return ir(request, f"/listas/{list_id}/confirmar?erro=confirmacao&address_id={address_id}")
-    return ir(request, f"/listas/{list_id}?aviso=confirmado")
+    settings = _settings(request)
+    if not _token_valido(
+        settings, web.PURPOSE_CONFIRM, list_id, address_id, token, confirmando=True
+    ):
+        return ir(request, "/listas?erro=token")
 
-
-@router.get("/{list_id}/confirmar")
-def formulario_confirmar(
-    request: Request, conn: Db, session: Active, list_id: int, address_id: int
-) -> Response:
-    """O formulário onde quem recebeu o código o escreve.
-
-    Não é o dono da lista a confirmar por outra pessoa — este formulário é o
-    que *o destinatário* vê no link do email, e o `token` assinado no caminho é
-    o que garante que ele só confirma a si próprio.
-    """
     endereco = service.endereco_da_lista(conn, list_id, address_id)
     if endereco is None or endereco["confirmed_at"] is not None:
-        return ir(request, "/listas")
-    lista = service.lista_do_utilizador(conn, session.user_id, list_id)
+        return ir(request, "/listas?erro=token")
+
     return page(
         request,
         "confirmar.html",
-        {"endereco": endereco, "lista": lista, "address_id": address_id},
+        {
+            "endereco": endereco,
+            "lista": service.lista_publico(conn, list_id),
+            "address_id": address_id,
+            "token": token,
+        },
     )
+
+
+@router.post("/{list_id}/confirmar/{address_id}")
+def submeter_confirmacao(
+    request: Request,
+    conn: Db,
+    list_id: int,
+    address_id: int,
+    token: Annotated[str, Form()] = "",
+    codigo: Annotated[str, Form()] = "",
+) -> Response:
+    """Confirma a inscrição, com o código que foi enviado para este endereço.
+
+    O código de 6 dígitos é o que prova que quem pede é quem recebe o email, e
+    o token é o que prova que este pedido é para este endereço. Os dois são
+    necessários: o código sozinho é adivinhável, o token sozinho é
+    encaminhável.
+    """
+    settings = _settings(request)
+    if not _token_valido(
+        settings, web.PURPOSE_CONFIRM, list_id, address_id, token, confirmando=True
+    ):
+        return ir(request, "/listas?erro=token")
+    try:
+        service.confirmar(conn, list_id, address_id, (codigo or "").strip())
+    except service.ErroConfirmacao:
+        # O utilizador **é** o destinatário e não tem sessão a que voltar. Um
+        # redirect para `/listas` seria perdê-lo; a mensagem vai para o query
+        # string da própria página.
+        return ir(
+            request,
+            f"/listas/{list_id}/confirmar/{address_id}?token={token}&erro=confirmacao",
+        )
+    return ir(request, f"/listas/{list_id}/confirmado")
+
+
+@router.get("/{list_id}/confirmado")
+def confirmado(request: Request, conn: Db, list_id: int) -> Response:
+    """A página de depois. Não mostra a lista, só confirma que ficou feito."""
+    lista = service.lista_publico(conn, list_id)
+    return page(request, "confirmado.html", {"lista": lista})
+
+
+@router.get("/{list_id}/descadenciar/{address_id}")
+def descadenciar_link(
+    request: Request,
+    conn: Db,
+    list_id: int,
+    address_id: int,
+    token: Annotated[str, Query()] = "",
+) -> Response:
+    """Descadência por link. Um clique, sem sessão, sem CSRF — como manda a RFC.
+
+    Sem sessão não há CSRF de sessão para validar, e por isso é o token que
+    garante que o link não pode ser forçado a alguém. `POST` e não `GET` porque
+    um `GET` que muda estado é o que um scanner de linksFollow prefere.
+
+    A porta é `POST`, e o `List-Unsubscribe` de um clique (FR-6.8) vai exigir
+    este mesmo caminho. Ver o follow-up do T015.
+    """
+    settings = _settings(request)
+    if not _token_valido(
+        settings, web.PURPOSE_UNSUBSCRIBE, list_id, address_id, token, confirmando=False
+    ):
+        return ir(request, "/listas?erro=token")
+    service.descadenciar(conn, address_id)
+    return ir(request, f"/listas/{list_id}/descadenciado")
+
+
+@router.get("/{list_id}/descadenciado")
+def descadenciado(request: Request, conn: Db, list_id: int) -> Response:
+    lista = service.lista_publico(conn, list_id)
+    return page(request, "descadenciado.html", {"lista": lista})
+
+
+def _token_valido(
+    settings: config.Settings,
+    purpose: str,
+    list_id: int,
+    address_id: int,
+    token: str,
+    *,
+    confirmando: bool,
+) -> bool:
+    """Verifica o token do link e o prazo certo para ele.
+
+    O prazo de confirmação é o do OTP (10 minutos): é um código de uso único e
+    breve. O de descadência é muito mais longo, porque uma pessoa que se
+    descadencia no primeiro dia e se arrepende no vigésimo quinto tem de
+    conseguir voltar atrás. Confundir os dois prazos é um bug de política, não de
+    código.
+    """
+    if confirmando:
+        salt = web.LINK_SALT_CONFIRM
+        max_age = settings.otp_ttl_minutes * 60
+    else:
+        salt = web.LINK_SALT_UNSUBSCRIBE
+        max_age = settings.unsubscribe_token_days * 24 * 3600
+    return web.verificar_link(settings, purpose, list_id, address_id, token, salt, max_age)
 
 
 __all__ = ["router"]

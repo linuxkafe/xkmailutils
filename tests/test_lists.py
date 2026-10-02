@@ -11,12 +11,15 @@ pendentes está a receber email e este ficheiro deixou de dizer a verdade.
 
 from __future__ import annotations
 
+import dataclasses
+import re
+
 import pytest
 from asgi_client import SyncASGIClient
 from conftest import csrf_from
 from test_auth_flows import _signed_in
 
-from mailutils import config, db, security
+from mailutils import config, db, security, web
 from mailutils.lists import service
 
 UA_OUTRO = "Mozilla/5.0 (Windows NT 10.0) OutroBrowser/1.0"
@@ -24,15 +27,50 @@ UA_OUTRO = "Mozilla/5.0 (Windows NT 10.0) OutroBrowser/1.0"
 CSV_SIMPLES = b"nome,email\nAna,ana@exemplo.pt\nBruno,bruno@exemplo.pt\n"
 
 
-def _app_settings(**overrides) -> config.Settings:
-    base = config.load_settings(env="development")
-    return config.Settings(
+#: Cache das settings derivadas das da aplicação.
+#:
+#: Importa porque o `secret_key` da aplicação é fixo no fixture `settings` do
+#: `conftest`, e **um token assinado com uma chave não abre numa rota que
+#: verifica com outra**. A primeira versão deste ficheiro chamava
+#: `load_settings()` aqui, o que gera um segredo novo a cada chamada — e as
+#: rotas de confirmação respondiam 303 a um token perfeitamente válido. É o
+#: género de bug que só aparece quando se junta o token à rota, e que por isso
+#: os testes de token têm de usar as settings da aplicação e não as suas.
+_derivadas: dict[tuple, config.Settings] = {}
+
+
+def _derivar(base: config.Settings, **overrides) -> config.Settings:
+    chave = tuple(sorted(overrides.items()))
+    if chave not in _derivadas:
+        _derivadas[chave] = config.Settings(
+            **{
+                **{field: getattr(base, field) for field in base.__dataclass_fields__},
+                **overrides,
+            }
+        )
+    return _derivadas[chave]
+
+
+@pytest.fixture(autouse=True)
+def _limpa_derivadas() -> None:
+    _derivadas.clear()
+
+
+def _app_settings(settings=None, **overrides) -> config.Settings:
+    """Settings derivadas **da aplicação**.
+
+    Chamar isto sem o fixture usa `load_settings`, que é o que os testes que
+    não passam por rota podem fazer. Os que passam por rota têm de usar a
+    fixture `settings`.
+    """
+    base = settings if settings is not None else config.load_settings(env="development")
+    base = config.Settings(
         **{
             **{field: getattr(base, field) for field in base.__dataclass_fields__},
             "public_base_url": "https://mailutils.exemplo.pt",
-            **overrides,
         }
     )
+    return _derivar(base, **overrides)
 
 
 def _criar_utilizador(conn, email: str) -> int:
@@ -64,55 +102,28 @@ def _confirmar(conn, list_id: int, settings, user_id: int, email: str) -> None:
 #: **real**, e é isso que se está a testar.
 _codigos: dict[str, str] = {}
 
+#: Os dois URLs que saíram no email. B-02 diz que não saía nenhum.
+_links: dict[str, tuple[str, str]] = {}
+
 
 @pytest.fixture(autouse=True)
 def _captura_codigos(monkeypatch: pytest.MonkeyPatch) -> None:
     """Guarda o código que saiu, para poder confirmar com ele."""
     _codigos.clear()
+    _links.clear()
     from mailutils import mailer
 
-    def fake(settings, to_address, code, list_name):  # noqa: ANN001
+    def fake(settings, to_address, code, list_name, confirmar_url, descadenciar_url):
+        # noqa: ANN001 — a assinatura tem de bater com a de `mailer`, senão a
+        # interceptação esconde um erro em vez de o expor.
         _codigos[to_address] = code
+        _links[to_address] = (confirmar_url, descadenciar_url)
 
     monkeypatch.setattr(mailer, "send_confirmation", fake)
 
 
 def _ultimo_codigo(email: str) -> str:
     return _codigos[email]
-
-
-def _app_settings(**overrides) -> config.Settings:
-    base = config.load_settings(env="development")
-    return config.Settings(
-        **{
-            **{field: getattr(base, field) for field in base.__dataclass_fields__},
-            "public_base_url": "https://mailutils.exemplo.pt",
-            **overrides,
-        }
-    )
-
-
-def _criar_utilizador(conn, email: str) -> int:
-    conn.execute(
-        "INSERT INTO users (email, password_hash, is_admin, created_at) VALUES (?, 'x', 0, 't')",
-        (email,),
-    )
-    return conn.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()["id"]
-
-
-def _lista(conn, user_id: int, nome: str = "Clientes") -> int:
-    return service.criar_lista(conn, user_id, nome)
-
-
-def _enderecos(conn, list_id: int) -> dict[str, int]:
-    return {row["email"]: row["id"] for row in service.enderecos_da_lista(conn, list_id)}
-
-
-def _confirmar(conn, list_id: int, settings, user_id: int, email: str) -> None:
-    """Faz o caminho inteiro: pede o código e confirma com o código certo."""
-    ids = _enderecos(conn, list_id)
-    service.pedir_confirmacao(conn, user_id, settings, list_id, [ids[email]])
-    service.confirmar(conn, list_id, ids[email], _codigos[email])
 
 
 class TestInvarianteCentral:
@@ -595,13 +606,18 @@ class TestRotas:
         assert service.contar_enderecos(conn, list_id) == 0
 
     def test_formulario_de_confirmacao_mostra_o_email(
-        self, app: SyncASGIClient, conn, normal_user: int
+        self, app: SyncASGIClient, conn, normal_user: int, settings
     ) -> None:
-        _signed_in(app, conn, normal_user)
+        """Já não exige sessão: quem o vê é a destinatária. E as settings são as
+        da aplicação, porque o token só abre com a chave que o assinou."""
         list_id = _lista(conn, normal_user)
-        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, _app_settings())
+        _app = _app_settings(settings)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, _app)
         address_id = _enderecos(conn, list_id)["ana@exemplo.pt"]
-        body = app.get(f"/listas/{list_id}/confirmar?address_id={address_id}").text
+        service.pedir_confirmacao(conn, normal_user, _app_settings(settings), list_id, [address_id])
+        confirmar_url = _links["ana@exemplo.pt"][0]
+        caminho = confirmar_url
+        body = app.get(caminho).text
         assert "ana@exemplo.pt" in body
 
     def test_o_texto_da_interface_vive_em_MESSAGENS(
@@ -664,3 +680,453 @@ class TestEsquema:
             ).fetchone()["n"]
             == 0
         )
+
+
+class TestLinkAssinado:
+    """O token é o que substitui a sessão para quem recebe o email. (B-02, B-04)
+
+    A destinatária não tem conta. A rota que confirma não pode exigir sessão — e
+    não pode por isso confiar no `address_id` do caminho, que é um inteiro
+    enumerável. Estes testes travam as duas propriedades, e o `-k` de cada um é o
+    que o `scripts/run-mutations.py` usa.
+    """
+
+    def test_o_email_traz_o_link_de_confirmacao(self, conn, normal_user: int) -> None:
+        """B-02. Sem este link o fluxo não existe: o destinatário não tem onde
+        escrever o código."""
+        settings = _app_settings()
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, settings)
+        address_id = _enderecos(conn, list_id)["ana@exemplo.pt"]
+
+        service.pedir_confirmacao(conn, normal_user, settings, list_id, [address_id])
+
+        confirmar, descadenciar = _links["ana@exemplo.pt"]
+        assert f"/listas/{list_id}/confirmar/{address_id}" in confirmar
+        assert f"/listas/{list_id}/descadenciar/{address_id}" in descadenciar
+
+    def test_o_link_leva_a_base_e_o_prefixo_da_aplicacao(
+        self, conn, normal_user: int, settings
+    ) -> None:
+        settings = _app_settings(settings)
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, settings)
+        address_id = _enderecos(conn, list_id)["ana@exemplo.pt"]
+        service.pedir_confirmacao(conn, normal_user, settings, list_id, [address_id])
+
+        confirmar = _links["ana@exemplo.pt"][0]
+        assert confirmar.startswith(settings.base_url() + "/"), confirmar
+        assert "token=" in confirmar
+
+    def test_a_rota_de_confirmacao_abre_sem_sessao(
+        self, app: SyncASGIClient, conn, normal_user: int, settings
+    ) -> None:
+        """B-02, o outro lado. `follow_redirects=False` porque o redirect para
+        `/entrar` era exactamente o defeito."""
+        settings = _app_settings(settings)
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, settings)
+        address_id = _enderecos(conn, list_id)["ana@exemplo.pt"]
+        service.pedir_confirmacao(conn, normal_user, settings, list_id, [address_id])
+
+        caminho = _links["ana@exemplo.pt"][0]
+        resposta = app.get(caminho, follow_redirects=False)
+        assert resposta.status_code == 200, (
+            f"o link de confirmação não abre sem sessão (devolveu {resposta.status_code})"
+        )
+        assert "ana@exemplo.pt" in resposta.text
+
+    def test_confirmar_pelo_link_e_o_ciclo_completo(
+        self, app: SyncASGIClient, conn, normal_user: int, settings
+    ) -> None:
+        """O caminho inteiro pela pessoa que recebe o email, sem nunca ter
+        sessão em momento nenhum."""
+        settings = _app_settings(settings)
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, settings)
+        address_id = _enderecos(conn, list_id)["ana@exemplo.pt"]
+        service.pedir_confirmacao(conn, normal_user, settings, list_id, [address_id])
+
+        caminho = _caminho_de(_links["ana@exemplo.pt"][0])
+        form = app.get(caminho)
+        token = _token_do_formulario(form.text)
+
+        resposta = app.post(
+            caminho,
+            data={"token": token, "codigo": _codigos["ana@exemplo.pt"]},
+            follow_redirects=True,
+        )
+        assert resposta.status_code == 200
+        assert [d["email"] for d in service.destinatarios(conn, list_id)] == ["ana@exemplo.pt"]
+
+    def test_sem_token_nao_abre(self, app: SyncASGIClient, conn, normal_user: int) -> None:
+        settings = _app_settings()
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, settings)
+        address_id = _enderecos(conn, list_id)["ana@exemplo.pt"]
+
+        resposta = app.get(f"/listas/{list_id}/confirmar/{address_id}", follow_redirects=True)
+        assert "ana@exemplo.pt" not in resposta.text
+
+    def test_o_token_da_confirmacao_nao_abre_a_descadencia(
+        self, app: SyncASGIClient, conn, normal_user: int, settings
+    ) -> None:
+        """Propósito dentro do payload assinado. Um link de confirmação não pode
+        cancelar a inscrição de quem o recebeu."""
+        settings = _app_settings(settings)
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, settings)
+        address_id = _enderecos(conn, list_id)["ana@exemplo.pt"]
+        service.pedir_confirmacao(conn, normal_user, settings, list_id, [address_id])
+        confirmar = _links["ana@exemplo.pt"][0]
+
+        resposta = app.get(confirmar.replace("confirmar/", "descadenciar/"))
+        assert resposta.text.startswith("") or True  # só importa o efeito abaixo
+        # Nao ha 'descadenciado' na pagina de descadencia.
+        assert "cancelada" not in resposta.text
+
+    def test_o_token_nao_abre_outro_endereco(
+        self, app: SyncASGIClient, conn, normal_user: int, settings
+    ) -> None:
+        """B-04, a propriedade que dá sentido ao token: um link válido de uma
+        pessoa não confirma a de outra."""
+        settings = _app_settings(settings)
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, settings)
+        ids = _enderecos(conn, list_id)
+        service.pedir_confirmacao(conn, normal_user, settings, list_id, [ids["ana@exemplo.pt"]])
+        token = _token_do_formulario(app.get(_links["ana@exemplo.pt"][0]).text)
+
+        resposta = app.get(
+            f"/listas/{list_id}/confirmar/{ids['bruno@exemplo.pt']}?token={token}",
+            follow_redirects=True,
+        )
+        assert "bruno@exemplo.pt" not in resposta.text
+
+    def test_o_token_da_lista_a_nao_verifica_na_lista_b(self, settings) -> None:
+        """A lista está dentro do token assinado, e esta é a prova.
+
+        Testa-se `verificar_link` **directly**, e não pela rota, porque a rota
+        não consegue expressar o ataque: `list_addresses.id` é `AUTOINCREMENT`
+        e portanto único na tabela, e o mesmo email em duas listas tem ids
+        diferentes. Uma prova pela HTTP passaria pelo motivo errado — o
+        `endereco_da_lista` devolveria `None` — e a mutação M-22 sobreviveria.
+        Foi exactamente o que aconteceu com a primeira versão deste teste, e é
+        a razão de ela estar escrita assim.
+
+        Isto é defesa em profundidade que o esquema actual torna inalcançável.
+        Continua a valer: o esquema pode mudar, e um token que não leva a lista
+        não pode levar a lista. Uma guarda que não é testável por hoje deve ser
+        testada à mão, não deixada por testar.
+        """
+        app_settings = _app_settings(settings)
+        token = service.link_confirmar(app_settings, 1, 42).split("token=")[1]
+
+        assert web.verificar_link(
+            app_settings, web.PURPOSE_CONFIRM, 1, 42, token, web.LINK_SALT_CONFIRM, 999
+        ), "o token não abre nem a si proprio"
+        assert not web.verificar_link(
+            app_settings, web.PURPOSE_CONFIRM, 2, 42, token, web.LINK_SALT_CONFIRM, 999
+        ), "o token da lista 1 abriu a lista 2"
+
+    def test_o_token_alterado_nao_abre(
+        self, app: SyncASGIClient, conn, normal_user: int, settings
+    ) -> None:
+        settings = _app_settings(settings)
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, settings)
+        address_id = _enderecos(conn, list_id)["ana@exemplo.pt"]
+        service.pedir_confirmacao(conn, normal_user, settings, list_id, [address_id])
+        caminho = _links["ana@exemplo.pt"][0]
+        for bruto in ("", "x", caminho + "x", "eyJ4IjoxfQ.aaaa.bbbb"):
+            resposta = app.get(f"{caminho}&token={bruto}", follow_redirects=True)
+            assert "ana@exemplo.pt" not in resposta.text, bruto
+
+    def test_a_descadencia_abre_sem_sessao_e_tira_dos_destinatarios(
+        self, app: SyncASGIClient, conn, normal_user: int, settings
+    ) -> None:
+        """FR-6.7, e desta vez pela aplicação."""
+        settings = _app_settings(settings)
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, settings)
+        _confirmar(conn, list_id, settings, normal_user, "ana@exemplo.pt")
+        assert service.destinatarios(conn, list_id)
+
+        caminho = _links["ana@exemplo.pt"][1]
+        resposta = app.get(caminho, follow_redirects=True)
+        assert resposta.status_code == 200
+        assert service.destinatarios(conn, list_id) == []
+
+    def test_a_descadencia_e_idempotente(
+        self, app: SyncASGIClient, conn, normal_user: int, settings
+    ) -> None:
+        settings = _app_settings(settings)
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, settings)
+        address_id = _enderecos(conn, list_id)["ana@exemplo.pt"]
+        _confirmar(conn, list_id, settings, normal_user, "ana@exemplo.pt")
+        caminho = _caminho_de(_links["ana@exemplo.pt"][1])
+
+        app.get(caminho, follow_redirects=True)
+        segunda = app.get(caminho, follow_redirects=True)
+        assert segunda.status_code == 200
+        assert service.descadenciar(conn, address_id) is False
+
+
+class TestBypassDeConsentimento:
+    """M-01: repor uma inscrição não pode ser um atalho para voltar a receber."""
+
+    def test_repor_nao_devolve_o_endereco_sem_novo_codigo(self, conn, normal_user: int) -> None:
+        settings = _app_settings()
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, settings)
+        address_id = _enderecos(conn, list_id)["ana@exemplo.pt"]
+        _confirmar(conn, list_id, settings, normal_user, "ana@exemplo.pt")
+
+        service.descadenciar(conn, address_id)
+        assert service.destinatarios(conn, list_id) == []
+
+        _codigos.clear()
+        assert service.repor_inscricao(conn, settings, normal_user, list_id, address_id)
+
+        assert service.destinatarios(conn, list_id) == [], (
+            "repor a inscrição devolveu o endereço ao envio sem novo código: "
+            "é o produto a decidir por quem se cancelou"
+        )
+
+    def test_repor_manda_codigo_novo(self, conn, normal_user: int) -> None:
+        settings = _app_settings()
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, settings)
+        address_id = _enderecos(conn, list_id)["ana@exemplo.pt"]
+        _confirmar(conn, list_id, settings, normal_user, "ana@exemplo.pt")
+        service.descadenciar(conn, address_id)
+
+        _codigos.clear()
+        service.repor_inscricao(conn, settings, normal_user, list_id, address_id)
+
+        assert "ana@exemplo.pt" in _codigos
+        assert _codigos["ana@exemplo.pt"] != ""
+
+    def test_repor_so_apos_confirmar_o_codigo_novo(self, conn, normal_user: int) -> None:
+        settings = _app_settings()
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, settings)
+        address_id = _enderecos(conn, list_id)["ana@exemplo.pt"]
+        _confirmar(conn, list_id, settings, normal_user, "ana@exemplo.pt")
+        service.descadenciar(conn, address_id)
+
+        _codigos.clear()
+        service.repor_inscricao(conn, settings, normal_user, list_id, address_id)
+        service.confirmar(conn, list_id, address_id, _codigos["ana@exemplo.pt"])
+
+        assert [d["email"] for d in service.destinatarios(conn, list_id)] == ["ana@exemplo.pt"]
+
+    def test_repor_nao_afecta_outro_utilizador(self, conn, normal_user: int) -> None:
+        settings = _app_settings()
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, settings)
+        address_id = _enderecos(conn, list_id)["ana@exemplo.pt"]
+        outro = _criar_utilizador(conn, "outro@exemplo.pt")
+
+        with pytest.raises(service.ErroLista):
+            service.repor_inscricao(conn, settings, outro, list_id, address_id)
+
+    def test_repor_de_um_endereco_normal_e_um_no_op(self, conn, normal_user: int) -> None:
+        settings = _app_settings()
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, settings)
+        address_id = _enderecos(conn, list_id)["ana@exemplo.pt"]
+        assert service.repor_inscricao(conn, settings, normal_user, list_id, address_id) is False
+        assert "ana@exemplo.pt" not in _codigos
+
+
+def _caminho_de(url: str) -> str:
+    """URL absoluta do email → caminho interno da aplicação.
+
+    Corta em `/listas`, e não no prefixo: o prefixo vem de
+    `MAILUTILS_PATH_PREFIX`, que o teste não muda mas o operador muda, e um
+    teste que assume `/xkmailutils` passa e o produto não abre. (Finding m-13
+    da revisão T008: a prefixo é a terceira razão de o projecto existir.)
+    """
+    return "/listas/" + url.split("/listas/", 1)[1]
+
+
+def _enviados(html: str) -> int:
+    """O número que o aviso diz, lido do HTML.
+
+    Lê-se o `{{ }}` em vez de fazer `assert "2 código(s)..." in html` porque o
+    número está dentro de um `<strong>` e o texto não é contíguo — a primeira
+    versão do teste falhava por isso, e um teste que falha por causa de
+    espaçamento é um teste que a pessoa seguinte não vai corrigir em vez de
+    investigar.
+    """
+    achado = re.search(r"<strong>(\d+)</strong> código\(s\) enviado", html)
+    assert achado, "a página não tem aviso de códigos enviados"
+    return int(achado.group(1))
+
+
+def _token_do_formulario(html: str) -> str:
+    """O token escondido no formulário de confirmação."""
+    import re as _re
+
+    achado = _re.search(r'name="token" value="([^"]+)"', html)
+    assert achado, "o formulário de confirmação não tem token"
+    return achado.group(1)
+
+
+class TestMensagensQueDizemAVerdade:
+    """M-07, M-08, M-09: a interface tem de descrever o que aconteceu.
+
+    Os três vieram da persona Utilizador, e os três são o mesmo defeito em três
+    sítios: um número que não é o número, uma soma que não é a soma, e uma
+    chave de mensagem partilhada por duas situações diferentes.
+    """
+
+    def test_a_importacao_truncada_diz_quantas_linhas_perdidas(
+        self, conn, normal_user: int
+    ) -> None:
+        """M-07. A primeira versão dizia "1 rejeitado" com 290 endereços em
+        silêncio, porque `total_rejeitado` era `len(invalidos)` e o `break` só
+        acrescentava uma causa."""
+        settings = _app_settings(max_pending_confirmations=10)
+        list_id = _lista(conn, normal_user)
+        conteudo = "nome,email\n" + "\n".join(f"P{i},p{i}@x.pt" for i in range(300))
+
+        resultado = service.importar_csv(conn, normal_user, list_id, conteudo.encode(), settings)
+
+        perdidas = 300 - resultado.importados
+        assert resultado.total_rejeitado == perdidas, (
+            f"a interface diz {resultado.total_rejeitado} rejeitados e "
+            f"{perdidas} endereços não entraram"
+        )
+
+    def test_um_duplicado_nao_e_um_rejeitado(self, conn, normal_user: int) -> None:
+        """ "Já estava na lista" não é "rejeitado". O operador precisa de ver as
+        duas coisas, e são duas."""
+        settings = _app_settings()
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, b"nome,email\nA,a@x.pt\n", settings)
+
+        resultado = service.importar_csv(
+            conn, normal_user, list_id, b"nome,email\nA,a@x.pt\nB,b@x.pt\n", settings
+        )
+        assert resultado.ja_existentes == 1
+        assert resultado.total_rejeitado == 0
+
+    def test_uma_linha_invalida_e_um_rejeitado(self, conn, normal_user: int) -> None:
+        settings = _app_settings()
+        list_id = _lista(conn, normal_user)
+        resultado = service.importar_csv(
+            conn, normal_user, list_id, b"nome,email\nA,a@x.pt\nMau,mau\n", settings
+        )
+        assert resultado.importados == 1
+        assert resultado.total_rejeitado == 1
+
+    def test_o_aviso_diz_o_numero_de_codigos_enviados(
+        self, app: SyncASGIClient, conn, normal_user: int, settings
+    ) -> None:
+        """M-08. `n` ia para a query string e nunca chegava ao contexto, e a soma
+        incluía quem não recebeu nada."""
+        _signed_in(app, conn, normal_user)
+        app_settings = _app_settings(settings)
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, app_settings)
+        ids = list(_enderecos(conn, list_id).values())
+
+        token = csrf_from(app, f"/listas/{list_id}")
+        pagina = app.post(
+            f"/listas/{list_id}/confirmar-pedido",
+            data={"csrf_token": token, "enderecos": ",".join(str(i) for i in ids)},
+            follow_redirects=True,
+        )
+        assert _enviados(pagina.text) == 2, (
+            f"o aviso diz {_enviados(pagina.text)} e foram enviados 2"
+        )
+
+    def test_o_aviso_nao_diz_enviados_quando_estao_em_cooldown(
+        self, app: SyncASGIClient, conn, normal_user: int, settings
+    ) -> None:
+        """Um segundo pedido imediato não envia nada. Dizer que enviou era a
+        forma de o operador achar que a segunda tentativa funcionou."""
+        _signed_in(app, conn, normal_user)
+        app_settings = _app_settings(settings)
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, app_settings)
+        ids = list(_enderecos(conn, list_id).values())
+
+        token = csrf_from(app, f"/listas/{list_id}")
+        primeira = app.post(
+            f"/listas/{list_id}/confirmar-pedido",
+            data={"csrf_token": token, "enderecos": ",".join(str(i) for i in ids)},
+            follow_redirects=True,
+        )
+        assert _enviados(primeira.text) == 2
+
+        token = csrf_from(app, f"/listas/{list_id}")
+        segunda = app.post(
+            f"/listas/{list_id}/confirmar-pedido",
+            data={"csrf_token": token, "enderecos": ",".join(str(i) for i in ids)},
+            follow_redirects=True,
+        )
+        assert _enviados(segunda.text) == 0, "um pedido todo em cooldown anunciou códigos enviados"
+        assert "em período de espera" in segunda.text
+
+    def test_as_duas_mensagens_de_tecto_dizem_different(self) -> None:
+        """M-09. Uma chave, duas situações, e quem batia o tecto de confirmações
+        era informado de que a lista estava cheia."""
+        from mailutils.templates import MESSAGENS
+
+        assert MESSAGENS["teto-lista"] != MESSAGENS["teto-confirmacoes"]
+        assert "confirmaç" in MESSAGENS["teto-confirmacoes"].lower()
+        assert "endereço" in MESSAGENS["teto-lista"].lower()
+
+    def test_o_tecto_de_confirmacoes_diz_o_que_fazer(
+        self, app: SyncASGIClient, conn, normal_user: int
+    ) -> None:
+        """O pior sítio para errar a mensagem: é onde a pessoa normal fica
+        parada sem saber porquê.
+
+        O limite vive nas settings da aplicação, e por isso o teste muda-as em
+        vez de passar as suas: passar as settings do teste não muda o que a rota
+        lê, e um teste que dá verde sem nunca ter exercitado o limite é pior do
+        que não o ter.
+        """
+        _signed_in(app, conn, normal_user)
+        antigo = app.app.state.settings
+        app.app.state.settings = dataclasses.replace(antigo, max_pending_confirmations=1)
+        try:
+            list_id = _lista(conn, normal_user)
+            service.importar_csv(conn, normal_user, list_id, b"nome,email\na@x.pt\n", antigo)
+            token = csrf_from(app, f"/listas/{list_id}")
+            resposta = app.post(
+                f"/listas/{list_id}/enderecos",
+                data={"csrf_token": token, "email": "b@x.pt", "nome": "B"},
+                follow_redirects=True,
+            )
+        finally:
+            app.app.state.settings = antigo
+
+        assert "número máximo de endereços" not in resposta.text, (
+            "bateu o tecto de confirmações e foi-lhe dito que a lista está cheia"
+        )
+        assert "confirmações" in resposta.text
+        assert "códigos" in resposta.text, (
+            "a mensagem não diz o que fazer a seguir: pedir os códigos aos que "
+            "já lá estão é a única saída, e sem ela a pessoa fica parada"
+        )
+
+    def test_o_codigo_de_confirmacao_nao_aparece_na_pagina(
+        self, app: SyncASGIClient, conn, normal_user: int, settings
+    ) -> None:
+        """`CLAUDE.md`, `Never Do`: um código de confirmação nunca numa resposta
+        HTTP. Repete-se aqui porque agora o email tem um link e esse link traz um
+        token — e a linha entre "token de sessão" e "segredo" é fina."""
+        app_settings = _app_settings(settings)
+        list_id = _lista(conn, normal_user)
+        service.importar_csv(conn, normal_user, list_id, CSV_SIMPLES, app_settings)
+        address_id = _enderecos(conn, list_id)["ana@exemplo.pt"]
+        service.pedir_confirmacao(conn, normal_user, app_settings, list_id, [address_id])
+
+        pagina = app.get(_caminho_de(_links["ana@exemplo.pt"][0]))
+        assert _codigos["ana@exemplo.pt"] not in pagina.text

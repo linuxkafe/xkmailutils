@@ -5,17 +5,20 @@
 <h1>Confirmar inscrição</h1>
 
 <p>
-  Enviámos um código de 6 dígitos para <strong>{{ endereco.email }}</strong>.
-  Escreva-o abaixo para confirmar que quer receber as mensagens desta lista.
+  <p>
+    Enviámos um código de 6 dígitos para <strong>{{ endereco.email }}</strong>.
+    Escreva-o abaixo para confirmar que quer receber as mensagens de
+    {% if lista %}<strong>{{ lista.name }}</strong>{% else %}esta lista{% endif %}.
+  </p>
 </p>
 
 {% if erro_chave %}<p class="erro" role="alert">{{ mensagens[erro_chave] }}</p>{% endif %}
 
 <div class="card">
   <form method="post" class="grid grid--form"
-        action="{{ raiz }}/listas/{{ lista.id }}/confirmar">
+        action="{{ raiz }}/listas/{{ lista.id }}/confirmar/{{ address_id }}">
     <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
-    <input type="hidden" name="address_id" value="{{ address_id }}">
+    <input type="hidden" name="token" value="{{ token }}">
     <label for="codigo">Código de 6 dígitos</label>
     <input type="text" id="codigo" name="codigo" inputmode="numeric"
            autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>

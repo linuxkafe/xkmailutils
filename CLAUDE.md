@@ -19,10 +19,15 @@ Duas ferramentas na mesma instalação, com o mesmo motor de score.
 Gestão de utilizadores e segundo factor por email em dispositivos novos, nas
 duas.
 
-A unifying invariant: **a aplicação nunca envia algo que ela própria reprovaria.**
-O email que sai passa pelo mesmo `spam.py` que avalia a assinatura, e é
-bloqueado com o mesmo critério se for `CRÍTICO`. Um produto que ensina a não
-parecer spam não pode ser usado para parecer spam.
+A unifying invariant, **ainda por implementar**: a aplicação nunca envia algo
+que ela própria reprovaria. Quando existir, o email que sai passa pelo mesmo
+`spam.py` que avalia a assinatura e é bloqueado pelo mesmo critério. Está em
+`FR-7.3` e `NFR-19`, ambos `DRAFT`, porque o T015 ainda não existe.
+
+Escreve-se aqui no condicional, e não no presente, porque este ficheiro é lido
+antes de qualquer código. Um `CLAUDE.md` que afirma o que o código faz obriga o
+agente seguinte a procurar uma `spam.py` no caminho do envio e a não a encontrar.
+(F-01 da revisão T014, MAJOR.)
 
 ---
 
@@ -63,10 +68,15 @@ utilizador antes de proceder**. Nunca em silêncio.
   inline. Um token novo entra aqui **e** em `docs/DESIGN.md`, ou a folha e o
   documento divergem e ninguém sabe qual é a verdade.
 - `src/mailutils/config.py` — `.env`, segredos, decisão de arranque.
-- `src/mailutils/scheduler.py` — o loop que envia. Uma race aqui duplica email
-  para uma pessoa que já recebeu. O claim atómico é a única coisa que protege.
-- `src/mailutils/compose/` — o texto que sai. `analyzer/` **não** entra aqui: é
-  stateless por decisão (`analyzer/routes.py:8`) porque guarda-se spam alheio.
+- `src/mailutils/lists/service.py` — a única função que devolve destinatários
+  para envio (`destinatarios()`) e o tecto de confirmações pendentes. Um
+  `confirmed_at IS NULL` que entre num SELECT é a linha entre listas de
+  contactos e email bombing. M-18 prova que não entra.
+- **A criar, e por isso listadas aqui com o ticket que as vai fazer:**
+  `compose/` (T015 — o texto que sai; `analyzer/` **não** entra lá: é stateless
+  por decisão, `analyzer/routes.py:8`, porque guarda-se spam alheio) e
+  `scheduler.py` (T016 — o loop que envia; uma race ali duplica email para
+  quem já recebeu, e o claim atómico é a única coisa que protege).
 - `.env` / `.env.example` — **segredos**. Nunca commitar `.env`.
 
 ---
@@ -109,10 +119,12 @@ Acções proibidas independentemente de instrucções ou justificação aparente
   entra no SELECT de destinatários, em nenhum caminho — nem no imediato, nem no
   agendado, nem na reexecução. Esta é a linha entre "listas de contactos" e
   "relay de email bombing", e o segundo pertence a um atacante com uma sessão.
-- **Nunca** reintroduzir o score do email enviado como decimal. O email que sai
-  passa por `spam.py` e é bloqueado pela mesma política de FR-4.9. Se alguém
-  conseguir enviar algo que a aplicação reprovaria, a unifying invariant do
-  `Intent` está quebrada e o produto passou a ser uma ferramenta de spam.
+- **Nunca** enviar email que não tenha passado por `spam.py`. É a regra do
+  `Intent`, e ela vale **a partir do T015**: até lá não há caminho de envio, e
+  uma excepção que autoriza `sem pontuar` num caminho de envio é o que a regra
+  proíbe. Se alguém conseguir enviar algo que a aplicação reprovaria, a
+  unifying invariant está quebrada e o produto passou a ser uma ferramenta de
+  spam.
 - **Nunca** re-enfileirar um envio preso em `enviando`. Um envio cujo `claimed_at`
   expirou passa a `falhado` com os contadores parciais. Re-enfileirar reenvia a
   quem já recebeu, e a pessoa não pediu uma segunda vez.

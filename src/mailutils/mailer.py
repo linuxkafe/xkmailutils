@@ -186,7 +186,12 @@ def send(
 
 
 def _render_confirmation_email(
-    code: str, app_name: str, list_name: str, minutes: int
+    code: str,
+    app_name: str,
+    list_name: str,
+    minutes: int,
+    confirmar_url: str,
+    descadenciar_url: str,
 ) -> tuple[str, str, str]:
     """O email que pede a presença numa lista.
 
@@ -196,13 +201,31 @@ def _render_confirmation_email(
     que está a autorizar. Por isso o nome da lista vai no assunto e na primeira
     frase.
     """
+    #
+    # O código vai no assunto E no corpo porque o destinatário é a pessoa que
+    # pediu — e ver o pedido num assunto já diz o quê. A excepção é o assunto sem
+    # contexto, que é o que transforma um código num mistério.
+    #
+    # O link é o que torna isto usável. Um código que só existe no corpo do
+    # email obriga a pessoa a recitá-lo a partir de um ecrã para outro, e um
+    # formulário atrás de sessão que a destinatária não tem não é um caminho,
+    # é um beco. As duas coisas juntas eram o BLOCKER B-02 da revisão do T014.
+    link = (
+        f'<p><a href="{_t(confirmar_url)}" '
+        f'style="color:#0056b3;font-size:15px;">Confirmar inscrição</a></p>'
+    )
     subject = f"{code} confirma a sua inscrição em {list_name}"
     text = (
         f"Pediu para receber mensagens de {list_name} através do {app_name}.\n\n"
+        f"Para confirmar, abra este endereço:\n\n"
+        f"    {confirmar_url}\n\n"
+        f"E escreva este código:\n\n"
         f"    {code}\n\n"
         f"O código é válido durante {minutes} minutos e só pode ser usado uma vez.\n\n"
         f"Não reconhece este pedido? Não faça nada: sem este código o endereço\n"
         f"não entra na lista e nunca recebe nada.\n\n"
+        f"Já não quer receber? Pode cancelar aqui, a qualquer momento:\n\n"
+        f"    {descadenciar_url}\n\n"
         f"— {app_name}"
     )
     html = (
@@ -210,12 +233,15 @@ def _render_confirmation_email(
         f'color:#212121;line-height:22px;max-width:480px;">'
         f"<p>Pediu para receber mensagens de <strong>{_t(list_name)}</strong> "
         f"através do <strong>{_t(app_name)}</strong>.</p>"
+        f"{link}"
         f'<p style="font-size:28px;font-weight:700;letter-spacing:4px;'
         f'color:#212121;margin:16px 0;">{_t(code)}</p>'
         f'<p style="color:#555;font-size:13px;">É válido durante {minutes} minutos '
         f"e só pode ser usado uma vez.</p>"
         f'<p style="color:#555;font-size:13px;">Não reconhece este pedido? Não faça '
         f"nada: sem este código o endereço não entra na lista e nunca recebe nada.</p>"
+        f'<p style="color:#555;font-size:13px;"><a href="{_t(descadenciar_url)}" '
+        f'style="color:#0056b3;">Já não quer receber? Cancele aqui.</a></p>'
         f'<p style="color:#555;font-size:13px;">— {_t(app_name)}</p>'
         f"</div>"
     )

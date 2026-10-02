@@ -316,6 +316,69 @@ MUTACOES: tuple[Mutacao, ...] = (
         "detalhe de implementacao.",
         ("F-01",),
     ),
+    Mutacao(
+        "M-20",
+        "src/mailutils/web.py",
+        '        and dados.get("a") == address_id',
+        '        and dados.get("a") is not None  # MUTACAO M-20',
+        (
+            "python3",
+            "-m",
+            "pytest",
+            "tests/test_lists.py",
+            "-q",
+            "--no-cov",
+            "-k",
+            "LinkAssinado",
+        ),
+        "A verificacao de posse do token desaparece: o `address_id` deixa de ser "
+        "comparado com o do payload assinado. O link de Ana passa a confirmar o "
+        "endereco do Bruno. E o B-04 desta mesma revisao, que era a razao de o "
+        "token existir.",
+        ("F-01",),
+    ),
+    Mutacao(
+        "M-21",
+        "src/mailutils/lists/service.py",
+        '            " SET unsubscribed_at = NULL, confirmed_at = NULL,"',
+        '            " SET unsubscribed_at = NULL,"',
+        (
+            "python3",
+            "-m",
+            "pytest",
+            "tests/test_lists.py",
+            "-q",
+            "--no-cov",
+            "-k",
+            "BypassConsentimento",
+        ),
+        "Repor uma inscricao volta a ser `unsubscribed_at = NULL` e mais nada. "
+        "O endereco deixa de estar em `destinatarios()` quando se cancela e "
+        "volta sem ninguem confirmar quando o dono da lista clica em 'Repor'. "
+        "E o M-01: o produto a decidir por quem se cancelou.",
+        ("F-01",),
+    ),
+    Mutacao(
+        "M-22",
+        "src/mailutils/web.py",
+        '        and dados.get("l") == list_id',
+        '        and dados.get("l") is not None  # MUTACAO M-22',
+        (
+            "python3",
+            "-m",
+            "pytest",
+            "tests/test_lists.py",
+            "-q",
+            "--no-cov",
+            "-k",
+            "token_da_lista_a",
+        ),
+        "A lista deixa de estar no token. Um link de confirmacao da lista A passa "
+        "a abrir a rota da lista B. So a seguranca que sobra e a de `address_id` "
+        "estar filtrado por lista — e isso e seguro por acidente do esquema, nao "
+        "por decisao.",
+        ("F-01",),
+    ),
 )
 
 def correr(mutacao: Mutacao) -> tuple[bool, str]:

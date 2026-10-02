@@ -83,8 +83,8 @@ Estado: `DRAFT` | `IMPLEMENTADO` | `VERIFICADO`. Só `VERIFICADO` tem teste.
 | FR-6.4 | Importação de um `.csv` com colunas de endereço (e nome opcional). Uma linha inválida é contada e listada, não aborta a importação. O ficheiro inteiro inválido **é** erro. | Must | IMPLEMENTADO |
 | FR-6.5 | A importação **não confirma** ninguém. Endereços importados entram como pendentes e o utilizador dispara a confirmação. Importar 5000 endereços que confirmaram por BCC já é spam, e o produto não é o que faz essa parte. | Must | IMPLEMENTADO |
 | FR-6.6 | Teto de destinatários por lista (`MAILUTILS_MAX_LIST_SIZE`, por omissão 5000) e teto de confirmações pendentes por utilizador (`MAILUTILS_MAX_PENDING_CONFIRMATIONS`, por omissão 500). Ao exceder, recusa com mensagem que diz qual limite. | Must | IMPLEMENTADO |
-| FR-6.7 | Um endereço pode ser descadenciado pelo próprio destinatário, sem sessão e sem passar por o utilizador. A descadência é irreversível pelo produto. | Must | IMPLEMENTADO |
-| FR-6.8 | Todos os emails enviados trazem `List-Unsubscribe` com um endereço `mailto:` e um URL com token assinado, mais `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. | Must | IMPLEMENTADO |
+| FR-6.7 | Um endereço pode ser descadenciado pelo próprio destinatário, sem sessão e sem passar pelo utilizador, por um link com token assinado. A reposição **exige novo código**: o dono da lista pode disparar o pedido, não confirmar por outrem. | Must | IMPLEMENTADO |
+| FR-6.8 | Todos os emails enviados trazem `List-Unsubscribe` com um endereço `mailto:` e um URL com token assinado, mais `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. | Must | DRAFT |
 
 ### FR-7 Composição e envio
 
