@@ -73,6 +73,42 @@ Estado: `DRAFT` | `IMPLEMENTADO` | `VERIFICADO`. Só `VERIFICADO` tem teste.
 | FR-5.5 | Layout responde a 375 px, 768 px, 1440 px. | Should | IMPLEMENTADO |
 | FR-5.6 | Navegação por teclado e `aria-label` nos controlos interactivos. | Should | IMPLEMENTADO |
 
+### FR-6 Listas de destinatários
+
+| ID | Requisito | Prioridade | Estado |
+|----|-----------|-----------|--------|
+| FR-6.1 | O utilizador cria listas nomeadas. Uma lista pertence a um utilizador e é eliminada com ele. | Must | IMPLEMENTADO |
+| FR-6.2 | Um endereço é adicionado **sempre por confirmar**. Recebe um código de uso único; só entra no `SELECT` de destinatários depois de `confirmed_at IS NOT NULL`. | Must | IMPLEMENTADO |
+| FR-6.3 | O código de confirmação reusa as primitivas de `security.py` (mesmo alfabeto, mesmo `scrypt`, mesmo cooldown) mas **não** a tabela `otp_codes`: essa é `user_id NOT NULL` e ligada a dispositivo. Fica em `list_addresses`, indexada por endereço. | Must | IMPLEMENTADO |
+| FR-6.4 | Importação de um `.csv` com colunas de endereço (e nome opcional). Uma linha inválida é contada e listada, não aborta a importação. O ficheiro inteiro inválido **é** erro. | Must | IMPLEMENTADO |
+| FR-6.5 | A importação **não confirma** ninguém. Endereços importados entram como pendentes e o utilizador dispara a confirmação. Importar 5000 endereços que confirmaram por BCC já é spam, e o produto não é o que faz essa parte. | Must | IMPLEMENTADO |
+| FR-6.6 | Teto de destinatários por lista (`MAILUTILS_MAX_LIST_SIZE`, por omissão 5000) e teto de confirmações pendentes por utilizador (`MAILUTILS_MAX_PENDING_CONFIRMATIONS`, por omissão 500). Ao exceder, recusa com mensagem que diz qual limite. | Must | IMPLEMENTADO |
+| FR-6.7 | Um endereço pode ser descadenciado pelo próprio destinatário, sem sessão e sem passar por o utilizador. A descadência é irreversível pelo produto. | Must | IMPLEMENTADO |
+| FR-6.8 | Todos os emails enviados trazem `List-Unsubscribe` com um endereço `mailto:` e um URL com token assinado, mais `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. | Must | IMPLEMENTADO |
+
+### FR-7 Composição e envio
+
+| ID | Requisito | Prioridade | Estado |
+|----|-----------|-----------|--------|
+| FR-7.1 | O utilizador escreve assunto e corpo (texto simples). A composição é guardada por utilizador. | Must | DRAFT |
+| FR-7.2 | O corpo composto é pontuado pelo **mesmo** `signatures/spam.py` que avalia a assinatura, e o resultado é mostrado da mesma forma (regras nomeadas, em pt-PT). | Must | DRAFT |
+| FR-7.3 | O envio é **bloqueado** se o score for `CRÍTICO` ou se qualquer regra for de gravidade `crítica` — a mesma política de FR-4.9, não uma variante mais tolerante. É a unifying invariant do `Intent`. | Must | DRAFT |
+| FR-7.4 | A assinatura do utilizador é anexada ao email enviado, com a opção de não a anexar. A assinatura entra no score do email inteiro. | Should | DRAFT |
+| FR-7.5 | O utilizador escolhe uma lista de destinatários. Não há campo de destinatário livre para BCC: um BCC escrito à mão é a forma mais rápida de um utilizador de boa-fé se tornar spammer, e o produto deve empurrá-lo para a lista. | Must | DRAFT |
+| FR-7.6 | O email é enviado com `Date`, `Message-ID` e `MIME-Version` válidos, e sem `MIME-Version` nas partes MIME (o mesmo bug que o T008 encontrou no caminho de OTP). | Must | DRAFT |
+| FR-7.7 | Falha de SMTP num destinatário não aborta o envio dos restantes. A falha é contada e a razão é da classe da excepção, nunca a sua mensagem (pode conter credenciais). | Must | DRAFT |
+| FR-7.8 | Um envio reporta `enviado` / `falhado` / `omitido`, e o relatório diz **quantos** de cada, sem expor endereços completos ao log. | Must | DRAFT |
+
+### FR-8 Agendamento
+
+| ID | Requisito | Prioridade | Estado |
+|----|-----------|-----------|--------|
+| FR-8.1 | Um envio pode ser agendado para uma data/hora futura, ou imediato. O agendamento persiste: reiniciar a aplicação não o perde. | Must | DRAFT |
+| FR-8.2 | O envio é reivindicado por **exatamente um** processo, por `UPDATE ... WHERE id = ? AND state = 'agendado'` dentro de `BEGIN IMMEDIATE`, com o resultado a ser o número de linhas afectadas. É isto que torna seguro correr `uvicorn --workers N` com N threads de agendamento. | Must | DRAFT |
+| FR-8.3 | Um envio cujo `claimed_at` expirou passa a `falhado` com os contadores parciais. **Nunca** volta a `agendado`: re-enfileirar reenvia a quem já recebeu. | Must | DRAFT |
+| FR-8.4 | O loop de agendamento é desactivável por `MAILUTILS_SCHEDULER=off`, e os testes correm com ele desligado — um teste que dependa de um thread em background não é determinístico. | Must | DRAFT |
+| FR-8.5 | O envio é feito em blocos (`MAILUTILS_SEND_BATCH`, por omissão 200 destinatários por ciclo) para que uma lista grande não segure o loop nem impeça o encerramento. | Should | DRAFT |
+
 ## Non-Functional
 
 | ID | Categoria | Requisito | Estado |
@@ -93,6 +129,9 @@ Estado: `DRAFT` | `IMPLEMENTADO` | `VERIFICADO`. Só `VERIFICADO` tem teste.
 | NFR-14 | Internacionalização | Apenas pt-PT. Todas as mensagens de interface vivem em `templates.MESSAGENS`, indexadas por chave estável — é o que permite traduzir sem caçar strings em templates. | IMPLEMENTADO |
 | NFR-15 | Maintainability | O caminho login → segundo factor → editor → score → exportação é verificado num browser real, com clique e formulário, e corre dentro de `make check`. Um E2E que passa sem browser conta como falhado, não como ignorado. | IMPLEMENTADO |
 | NFR-16 | Maintainability | Toda a correcção de um bug tem uma mutação associada que, se passar, deixa `make check` vermelho. O ficheiro `aes/tickets/T008-mutations.md` é **gerado** por `scripts/run-mutations.py` a partir da saída real dos comandos — ninguém escreve lá um resultado à mão. | IMPLEMENTADO |
+| NFR-17 | Conformidade | Enviar exige um remetente identificável: `MAILUTILS_MAIL_FROM` mais `MAILUTILS_SENDER_POSTAL_ADDRESS`. Sem o endereço postal, o envio é recusado no arranque de quem activa o envio. **Esta é a parte de que eu não posso garantir a suficiência jurídica** — os requisitos de descadência variam por jurisdição e o owner é quem assume essa responsabilidade. O que o produto garante é que o mecanismo existe e é obrigatório, não que satisfaz toda a lei. | DRAFT |
+| NFR-18 | Segurança | Os limites anti-abuso são configuração (`MAILUTILS_MAX_LIST_SIZE`, `MAILUTILS_MAX_PENDING_CONFIRMATIONS`, `MAILUTILS_CONFIRM_COOLDOWN_SECONDS`), nunca constantes escondidas. Reduzi-los é legítimo; **aumentá-los por omissão** é uma decisão do dono, e o valor por omissão está escolhido para ser defensável sem revisão legal. | IMPLEMENTADO |
+| NFR-19 | Maintainability | Tudo o que sai da aplicação passa por `signatures/spam.py` antes de sair. Não há caminho de envio que salte o score — nem imediato, nem agendado, nem por reexecução. Testado por uma mutação que remove a chamada e deixa `make check` vermelho. | DRAFT |
 
 ## Constraints
 
@@ -100,8 +139,18 @@ Estado: `DRAFT` | `IMPLEMENTADO` | `VERIFICADO`. Só `VERIFICADO` tem teste.
 - **Framework:** FastAPI + Jinja2 (já instalados; Flask não está disponível)
 - **Persistência:** SQLite via `sqlite3` da stdlib (SQLAlchemy não está disponível)
 - **Deployment:** self-hosted, `uvicorn`, atrás de reverse proxy TLS
-- **Dependencies novas:** 0
-- **Fora do âmbito (ver CLAUDE.md):** multi-tenancy, SMTP próprio, TOTP, faturação, apps móveis
+- **Dependências novas:** 0
+- **SMTP:** o servidor SMTP **já configurado** pelo operador é o transporte. Não há
+  SMTP próprio, nem fila externa, nem broker. Zero dependências novas aplica-se
+  integralmente ao caminho de envio.
+- **Fora do âmbito (ver CLAUDE.md):** multi-tenancy, TOTP, faturação, apps móveis,
+  caixas de entrada e sincronização de email
+
+> **Alteração de contrato, 2026-10-02.** Até aqui, "SMTP próprio" e "envio de
+> newsletters" estavam em fora-do-âmbito. O dono inverteu a decisão: a aplicação
+> passa a compor e enviar. A decisão anterior está registada no histórico
+> (`git log`) e em `aes/tickets/T013`. O que **não** mudou: zero dependências
+> novas, e o SMTP continua a ser o que o operador já tinha.
 
 ## Requisitos que NÃO foram implementados
 

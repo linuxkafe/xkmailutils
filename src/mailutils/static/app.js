@@ -43,6 +43,7 @@
 
   var fieldsInput = document.getElementById("campo-fields");
   var themeInput = document.getElementById("campo-theme");
+  var layoutInput = document.getElementById("campo-layout");
   var csrf = (form.querySelector('input[name="csrf_token"]') || {}).value || "";
   var scoreBox = document.getElementById("caixa-score");
   var preview = document.getElementById("preview");
@@ -93,6 +94,7 @@
     var body = new URLSearchParams();
     body.set("fields", JSON.stringify(collect()));
     body.set("theme", themeInput ? themeInput.value : "dark");
+    body.set("layout", layoutInput ? layoutInput.value : "stack");
     return RAIZ + "/assinatura/preview-documento?" + body.toString();
   }
 
@@ -167,6 +169,7 @@
     body.set("csrf_token", csrf);
     body.set("fields", JSON.stringify(collect()));
     body.set("theme", themeInput ? themeInput.value : "dark");
+    body.set("layout", layoutInput ? layoutInput.value : "stack");
 
     fetch(RAIZ + "/assinatura/preview", {
       method: "POST",
@@ -212,6 +215,21 @@
           b.setAttribute("aria-checked", b === button ? "true" : "false");
         });
         if (themeInput) themeInput.value = button.getAttribute("data-theme");
+        refresh();
+      });
+    }
+  );
+
+  Array.prototype.forEach.call(
+    form.querySelectorAll(".botao-estrutura"),
+    function (button) {
+      button.addEventListener("click", function () {
+        Array.prototype.forEach.call(form.querySelectorAll(".botao-estrutura"), function (b) {
+          b.setAttribute("aria-checked", b === button ? "true" : "false");
+        });
+        if (layoutInput) layoutInput.value = button.getAttribute("data-layout");
+        var descricao = document.getElementById("descricao-estrutura");
+        if (descricao) descricao.textContent = button.getAttribute("title") || "";
         refresh();
       });
     }

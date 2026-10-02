@@ -39,6 +39,7 @@
   <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
   <input type="hidden" name="fields" id="campo-fields" value="">
   <input type="hidden" name="theme" id="campo-theme" value="{{ tema_assinatura }}">
+  <input type="hidden" name="layout" id="campo-layout" value="{{ estrutura_assinatura }}">
 
   <div class="grid grid--split">
     {# ------------------------------------------------------- formulário -- #}
@@ -164,6 +165,29 @@
           </button>
           {% endfor %}
         </div>
+      </div>
+
+      <div class="card">
+        <h2>Estrutura da assinatura</h2>
+        <p class="muted small">
+          Como as peças se dispõem: o tema escolhe as cores, a estrutura escolhe
+          a forma. As duas combinações são independentes.
+        </p>
+        <div class="actions" role="radiogroup" aria-label="Estrutura da assinatura">
+          {% for chave, e in estruturas.items() %}
+          <button type="button" class="btn btn--sm btn--secondary botao-estrutura"
+                  data-layout="{{ chave }}" role="radio"
+                  title="{{ e.description }}"
+                  aria-checked="{{ 'true' if chave == estrutura_assinatura else 'false' }}">
+            {{ e.name }}
+          </button>
+          {% endfor %}
+        </div>
+        <p class="muted small" id="descricao-estrutura">
+          {% for chave, e in estruturas.items() %}
+            {%- if chave == estrutura_assinatura %}{{ e.description }}{% endif -%}
+          {% endfor %}
+        </p>
       </div>
 
       <div class="actions">

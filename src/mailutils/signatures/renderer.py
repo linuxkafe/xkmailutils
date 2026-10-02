@@ -50,6 +50,12 @@ class Theme:
 #: Temas de assinatura. Deliberadamente poucos: cada tema é uma superfície de
 #: suporte a sério (cliente de email, impressão, modo escuro do OS), e cada
 #: combinação nova é uma que alguém vai ter de depurar.
+#:
+#: As cores não foram escolhidas a olho. `tests/test_renderer.py` parametriza o
+#: gate de contraste sobre `sorted(THEMES)`, portanto **qualquer tema novo é
+#: verificado automaticamente** contra 4.5:1 para `text` e `muted`, no fundo
+#: que sai no HTML — não contra o fundo declarado. Um tema escuro tem de levar o
+#: seu fundo; um claro é transparente de propósito (ver `_precisa_de_fundo`).
 THEMES: dict[str, Theme] = {
     "dark": Theme(
         name="Escuro",
@@ -67,9 +73,83 @@ THEMES: dict[str, Theme] = {
         accent="#0056b3",
         border="#e0e0e0",
     ),
+    "graphite": Theme(
+        name="Grafite",
+        background="#101317",
+        text="#f2f4f7",
+        muted="#b3bcc9",
+        accent="#7cb8ff",
+        border="#2a3038",
+    ),
+    "navy": Theme(
+        name="Azul escuro",
+        background="#0d1b2a",
+        text="#eef3f8",
+        muted="#aec4d9",
+        accent="#ffd166",
+        border="#1b3348",
+    ),
+    "forest": Theme(
+        name="Verde escuro",
+        background="#0e1f17",
+        text="#eaf4ee",
+        muted="#a9c6b6",
+        accent="#8fd694",
+        border="#1d3a2b",
+    ),
+    "paper": Theme(
+        name="Papel",
+        background="#ffffff",
+        text="#2b2620",
+        muted="#5f574c",
+        accent="#9a3412",
+        border="#ddd6c9",
+    ),
+    "slate": Theme(
+        name="Ardósia",
+        background="#ffffff",
+        text="#1f2933",
+        muted="#52606d",
+        accent="#0b5c8a",
+        border="#d5dde3",
+    ),
 }
 
 DEFAULT_THEME = "dark"
+
+
+@dataclass(frozen=True)
+class Layout:
+    """Uma variante de estrutura da assinatura."""
+
+    name: str
+    description: str
+
+
+#: Estruturas possíveis. `stack` é a original e não muda: assinaturas já
+#: guardadas em `signatures` não têm coluna de layout, e o default tem de
+#: continuar a produzir o mesmo HTML, byte a byte, ou o T013 passa a mudar o
+#: email de quem já tinha uma assinatura.
+LAYOUTS: dict[str, Layout] = {
+    "stack": Layout(
+        name="Vertical",
+        description="Identidade e contactos um abaixo do outro, ao lado do logótipo.",
+    ),
+    "compact": Layout(
+        name="Compacto",
+        description="Duas linhas, o mais baixo possível. O logótipo fica pequeno e ao lado.",
+    ),
+    "columns": Layout(
+        name="Duas colunas",
+        description="Identidade em cima e contactos repartidos por duas colunas.",
+    ),
+    "boxed": Layout(
+        name="Com moldura",
+        description="Vertical, dentro de uma moldura com borda. Visível nos temas claros.",
+    ),
+}
+
+DEFAULT_LAYOUT = "stack"
 
 #: Campos que são ligações visíveis. O limite existe porque 15 hyperlinks numa
 #: assinatura é, para vários filtros, mais links do que texto. (FR-4.4)
@@ -92,6 +172,7 @@ class SignatureData:
     logo_url: str = ""
     logo_alt: str = ""
     theme: str = DEFAULT_THEME
+    layout: str = DEFAULT_LAYOUT
     #: Preenchido pelo renderer quando o limite de ligações foi excedido.
     truncated_links: int = 0
     warnings: list[str] = field(default_factory=list)
@@ -117,11 +198,16 @@ def _normalise_url(url: str) -> str:
     return candidate
 
 
-def build_signature_data(raw: dict, settings: Settings, theme: str | None = None) -> SignatureData:
+def build_signature_data(
+    raw: dict,
+    settings: Settings,
+    theme: str | None = None,
+    layout: str | None = None,
+) -> SignatureData:
     """Normaliza o input cru do formulário num `SignatureData`.
 
-    Concentra aqui toda a validação de ligações e temas para que o renderer
-    possa assumir dados já limpos. (Princípio 2: simplicidade)
+    Concentra aqui toda a validação de ligações, temas e layouts para que o
+    renderer possa assumir dados já limpos. (Princípio 2: simplicidade)
     """
     data = SignatureData(
         name=_plain(raw.get("name")),
@@ -135,11 +221,20 @@ def build_signature_data(raw: dict, settings: Settings, theme: str | None = None
         logo_url=(raw.get("logo_url") or "").strip(),
         logo_alt=_plain(raw.get("logo_alt")) or "Logótipo",
         theme=theme or raw.get("theme") or DEFAULT_THEME,
+        layout=layout or raw.get("layout") or DEFAULT_LAYOUT,
     )
 
     if data.theme not in THEMES:
         data.warnings.append(f"Tema {data.theme!r} desconhecido. A usar '{DEFAULT_THEME}'.")
         data.theme = DEFAULT_THEME
+
+    # A mesma política do tema: um layout desconhecido **não** cai para o
+    # default em silêncio. Uma assinatura guardada com `layout='box'` que
+    # deixasse de existir renderizaria vertical sem ninguém saber porque é que
+    # a assinatura mudou de aspecto depois de uma actualização.
+    if data.layout not in LAYOUTS:
+        data.warnings.append(f"Estrutura {data.layout!r} desconhecida. A usar '{DEFAULT_LAYOUT}'.")
+        data.layout = DEFAULT_LAYOUT
 
     links: list[dict[str, str]] = []
     if data.website:
@@ -202,112 +297,337 @@ def _precisa_de_fundo(theme: Theme) -> bool:
     return _luminance(theme.text) > _luminance(theme.background)
 
 
-def render_html(data: SignatureData, settings: Settings) -> str:
-    """Devolve o HTML da assinatura. É isto, byte a byte, que vai para o email."""
-    theme = THEMES[data.theme]
-    links = data.links_for_output(settings.max_visible_links)
+class _Blocos:
+    """As peças de HTML que as quatro estruturas partilh.
 
-    # Cada linha da assinatura é a sua própria tabela. O Word engine do Outlook
-    # não respeita `<div>` dentro de `<td>` com margens consistentes, e a
-    # correção é não usar `<div>` para estrutura. (Princípio 1: simplicidade
-    # rui por compatibilidade, não por estilo.)
-    def stack(items: list[str]) -> str:
-        return "".join(
-            '<table role="presentation" cellpadding="0" cellspacing="0" border="0"'
-            f' style="margin:0 0 4px 0;"><tr><td style="padding:0;margin:0;">'
-            f"{item}</td></tr></table>"
-            for item in items
-        )
+    Existe por uma razão concreta e não por estilo: o `stack` é o layout
+    original e tem de continuar a produzir **byte a byte** o mesmo HTML, porque
+    é o que já está guardado na base de dados e o que os testes fixam. Se cada
+    estrutura construísse os seus `<span>` e os seus `<a>`, uma correcção de
+    escaping num deles não chegaria aos outros, e a garantia de que texto de
+    utilizador não injecta HTML passaria a valer para três dos quatro.
 
-    def span(content: str, *, size: int, colour: str, weight: str = "") -> str:
+    Tudo o que é comum — escaping, cor, tamanho, o `<a>` — vive aqui. Cada
+    estrutura decide só a **arrumação**.
+    """
+
+    def __init__(self, data: SignatureData, settings: Settings) -> None:
+        self.data = data
+        self.settings = settings
+        self.theme = THEMES[data.theme]
+        self.links = data.links_for_output(settings.max_visible_links)
+
+    # --- peças pequenas -------------------------------------------------
+
+    def span(self, content: str, *, size: int, colour: str, weight: str = "") -> str:
         weight_css = f"font-weight:{weight};" if weight else ""
         return f'<span style="font-size:{size}px;{weight_css}color:{colour};">{content}</span>'
 
-    def anchor(href: str, label: str) -> str:
+    def anchor(self, href: str, label: str) -> str:
         return (
-            f'<a href="{_t(href)}" style="color:{theme.accent};text-decoration:none;">'
+            f'<a href="{_t(href)}" style="color:{self.theme.accent};text-decoration:none;">'
             f"{_t(label)}</a>"
         )
 
-    identity: list[str] = []
-    if data.name:
-        identity.append(span(_t(data.name), size=15, colour=theme.text, weight="600"))
-    if data.role:
-        identity.append(span(_t(data.role), size=13, colour=theme.muted))
-    if data.company:
-        identity.append(span(_t(data.company), size=13, colour=theme.muted))
-
-    contact_rows: list[str] = []
-    if data.email:
-        contact_rows.append(
-            span(anchor(f"mailto:{data.email}", data.email), size=13, colour=theme.text)
-        )
-    if data.phone:
-        tel = re.sub(r"[^0-9+]", "", data.phone) or data.phone
-        contact_rows.append(span(anchor(f"tel:{tel}", data.phone), size=13, colour=theme.text))
-    if data.address:
-        contact_rows.append(span(_t(data.address), size=12, colour=theme.muted))
-    for link in links:
-        contact_rows.append(span(anchor(link["url"], link["label"]), size=13, colour=theme.text))
-
-    # A coluna do logótipo só existe se houver logótipo. Uma célula vazia com
-    # width fixo é sinal de HTML de spam e não serve para nada.
-    logo_cell = ""
-    if data.logo_url:
-        logo_cell = (
-            '<td style="padding:0 16px 0 0;vertical-align:top;">'
-            f'<img src="{_t(data.logo_url)}" width="96" alt="{_t(data.logo_alt)}" '
-            'style="display:block;width:96px;height:auto;border:0;outline:none;'
-            'text-decoration:none;-ms-interpolation-mode:bicubic;"></td>'
+    def linha(self, item: str) -> str:
+        """Uma linha da assinatura é a sua própria tabela. Ver `render_stack`."""
+        return (
+            '<table role="presentation" cellpadding="0" cellspacing="0" border="0"'
+            ' style="margin:0 0 4px 0;"><tr><td style="padding:0;margin:0;">'
+            f"{item}</td></tr></table>"
         )
 
-    def cell(inner: str) -> str:
+    def pilha(self, items: list[str]) -> str:
+        return "".join(self.linha(item) for item in items)
+
+    def celula(self, inner: str) -> str:
         if not inner:
             return ""
         return f'<td style="vertical-align:top;">{inner}</td>'
 
-    note = ""
-    if data.note:
-        note = (
+    # --- conteúdo -------------------------------------------------------
+
+    def identity(self) -> list[str]:
+        out: list[str] = []
+        if self.data.name:
+            out.append(self.span(_t(self.data.name), size=15, colour=self.theme.text, weight="600"))
+        if self.data.role:
+            out.append(self.span(_t(self.data.role), size=13, colour=self.theme.muted))
+        if self.data.company:
+            out.append(self.span(_t(self.data.company), size=13, colour=self.theme.muted))
+        return out
+
+    def contactos(self) -> list[str]:
+        """Email, telefone, morada e ligações, por esta ordem e nesta fonte."""
+        out: list[str] = []
+        if self.data.email:
+            out.append(
+                self.span(
+                    self.anchor(f"mailto:{self.data.email}", self.data.email),
+                    size=13,
+                    colour=self.theme.text,
+                )
+            )
+        if self.data.phone:
+            tel = re.sub(r"[^0-9+]", "", self.data.phone) or self.data.phone
+            out.append(
+                self.span(
+                    self.anchor(f"tel:{tel}", self.data.phone),
+                    size=13,
+                    colour=self.theme.text,
+                )
+            )
+        if self.data.address:
+            out.append(self.span(_t(self.data.address), size=12, colour=self.theme.muted))
+        for link in self.links:
+            out.append(
+                self.span(
+                    self.anchor(link["url"], link["label"]),
+                    size=13,
+                    colour=self.theme.text,
+                )
+            )
+        return out
+
+    def telefone(self) -> str:
+        return re.sub(r"[^0-9+]", "", self.data.phone or "") or (self.data.phone or "")
+
+    def nota(self) -> str:
+        if not self.data.note:
+            return ""
+        return (
             '<table role="presentation" cellpadding="0" cellspacing="0" border="0"'
             ' style="margin:8px 0 0 0;"><tr><td style="padding:0;margin:0;'
-            f"border-top:1px solid {theme.border};font-size:11px;color:{theme.muted};"
-            f'line-height:16px;">{_t(data.note).replace(chr(10), "<br>")}</td></tr></table>'
+            f"border-top:1px solid {self.theme.border};font-size:11px;color:{self.theme.muted};"
+            f'line-height:16px;">{_t(self.data.note).replace(chr(10), "<br>")}</td></tr></table>'
         )
 
-    body = stack(identity) + stack(contact_rows) + note
+    def logo(self, *, largura: int = 96, align: str = "top") -> str:
+        """A célula do logótipo só existe se houver logótipo.
 
-    # O fundo do tema, quando o tema é escuro. Vai em dois sítios de propósito:
-    # `background` no `<div>` para os clientes modernos, e `bgcolor` no
-    # `<table>` porque o Word engine do Outlook ignora `background` num `<div>`
-    # e só honra o atributo. Sem os dois, o tema escuro sai com texto claro
-    # sobre o branco do cliente — 1.14:1, invisível. (F-02)
-    opaco = _precisa_de_fundo(theme)
-    fundo = f"background:{theme.background};" if opaco else ""
-    # O padding só existe quando há fundo: texto colado à borda de um bloco
-    # escuro parece uma caixa mal feita, e texto sem fundo não precisa dele.
-    padding = "padding:10px 12px;" if opaco else ""
-    cor_tabela = f' bgcolor="{theme.background}"' if opaco else ""
+        Uma célula vazia com `width` fixo é sinal de HTML de spam e não serve
+        para nada.
+        """
+        if not self.data.logo_url:
+            return ""
+        return (
+            f'<td style="padding:0 16px 0 0;vertical-align:{align};">'
+            f'<img src="{_t(self.data.logo_url)}" width="{largura}" '
+            f'alt="{_t(self.data.logo_alt)}" '
+            f'style="display:block;width:{largura}px;height:auto;border:0;outline:none;'
+            'text-decoration:none;-ms-interpolation-mode:bicubic;"></td>'
+        )
 
-    parts = [
-        '<table role="presentation" cellpadding="0" cellspacing="0" border="0"'
-        f"{cor_tabela} "
-        'style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;'
-        f'{fundo}">',
-        "<tr>",
-        logo_cell,
-        cell(body),
-        "</tr>",
-        "</table>",
-    ]
-    html = "".join(parts)
+    # --- superfície -----------------------------------------------------
 
-    return (
-        '<div style="font-family:Arial,Helvetica,sans-serif;'
-        f"color:{theme.text};font-size:13px;line-height:18px;{fundo}{padding}"
-        f'display:inline-block;">'
-        f"{html}{SIGNATURE_MARKER}</div>"
+    def superficie(self) -> tuple[str, str, str]:
+        """`(fundo, padding, bgcolor)` — o mesmo que `fundo`/`padding`/`cor_tabela`.
+
+        O fundo do tema, quando o tema é escuro, vai em dois sítios de propósito:
+        `background` no `<div>` para os clientes modernos, e `bgcolor` no
+        `<table>` porque o Word engine do Outlook ignora `background` num `<div>`
+        e só honra o atributo. Sem os dois, o tema escuro sai com texto claro
+        sobre o branco do cliente — 1.14:1, invisível. (F-02)
+        """
+        opaco = _precisa_de_fundo(self.theme)
+        return (
+            f"background:{self.theme.background};" if opaco else "",
+            "padding:10px 12px;" if opaco else "",
+            f' bgcolor="{self.theme.background}"' if opaco else "",
+        )
+
+    def embrulho(self, inner: str, *, padding_interno: bool = False) -> str:
+        fundo, padding, _ = self.superficie()
+        # `padding_interno`: quando a estrutura já traz o seu próprio padding
+        # (a moldura), o do embrulho seria um segundo anel de espaço em volta.
+        return (
+            '<div style="font-family:Arial,Helvetica,sans-serif;'
+            f"color:{self.theme.text};font-size:13px;line-height:18px;{fundo}"
+            f"{'' if padding_interno else padding}"
+            f'display:inline-block;">'
+            f"{inner}{SIGNATURE_MARKER}</div>"
+        )
+
+    def tabela(self, *, estilo: str, cor_tabela: str) -> str:
+        return (
+            '<table role="presentation" cellpadding="0" cellspacing="0" border="0"'
+            f'{cor_tabela} style="{estilo}">'
+        )
+
+
+def _render_stack(b: _Blocos) -> str:
+    """A estrutura original: identidade e contactos empilhados, ao lado do logótipo.
+
+    Não muda. É o layout das assinaturas que já estão guardadas.
+    """
+    body = b.pilha(b.identity()) + b.pilha(b.contactos()) + b.nota()
+
+    fundo, _, cor_tabela = b.superficie()
+    html = "".join(
+        [
+            b.tabela(
+                estilo=(f"border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;{fundo}"),
+                cor_tabela=cor_tabela,
+            ),
+            "<tr>",
+            b.logo(),
+            b.celula(body),
+            "</tr>",
+            "</table>",
+        ]
     )
+    return b.embrulho(html)
+
+
+def _render_compact(b: _Blocos) -> str:
+    """Tudo em duas linhas, o mais baixo possível.
+
+    As ligações não descem de linha: a assinatura ocupa a altura de um parágrafo
+    em vez de seis. É o layout para quem manda muito e não quer que o rodapé
+    empurre o conteúdo para baixo da dobra.
+    """
+    theme = b.theme
+    sep = f'<span style="color:{theme.border};"> · </span>'
+
+    primeira: list[str] = []
+    if b.data.name:
+        primeira.append(b.span(_t(b.data.name), size=15, colour=theme.text, weight="600"))
+    for value in (b.data.role, b.data.company):
+        if value:
+            primeira.append(b.span(_t(value), size=13, colour=theme.muted))
+    if b.data.email:
+        primeira.append(
+            b.span(
+                b.anchor(f"mailto:{b.data.email}", b.data.email),
+                size=13,
+                colour=theme.text,
+            )
+        )
+    if b.data.phone:
+        primeira.append(
+            b.span(
+                b.anchor(f"tel:{b.telefone()}", b.data.phone),
+                size=13,
+                colour=theme.text,
+            )
+        )
+
+    segunda: list[str] = []
+    if b.data.address:
+        segunda.append(b.span(_t(b.data.address), size=12, colour=theme.muted))
+    for link in b.links:
+        segunda.append(b.span(b.anchor(link["url"], link["label"]), size=13, colour=theme.text))
+
+    corpo = sep.join(primeira)
+    if segunda:
+        corpo += f"<br>{sep.join(segunda)}"
+    if b.data.note:
+        corpo += b.nota()
+
+    fundo, _, cor_tabela = b.superficie()
+    celula = b.celula(corpo).replace("vertical-align:top", "vertical-align:middle")
+    html = "".join(
+        [
+            b.tabela(
+                estilo=(f"border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;{fundo}"),
+                cor_tabela=cor_tabela,
+            ),
+            "<tr>",
+            b.logo(largura=40, align="middle"),
+            celula,
+            "</tr>",
+            "</table>",
+        ]
+    )
+    return b.embrulho(html)
+
+
+def _render_columns(b: _Blocos) -> str:
+    """Identidade em cima, contactos repartidos por duas colunas.
+
+    A segunda coluna só existe se sobrar conteúdo para ela. Uma coluna vazia com
+    `width` fixo é um buraco visível na assinatura e um sinal de HTML de spam.
+    """
+    corpo = b.pilha(b.identity())
+
+    contactos = b.contactos()
+    if contactos:
+        meio = (len(contactos) + 1) // 2
+        esquerda = contactos[:meio]
+        direita = contactos[meio:]
+        celulas = [f'<td style="padding:0 24px 0 0;vertical-align:top;">{b.pilha(esquerda)}</td>']
+        if direita:
+            celulas.append(f'<td style="vertical-align:top;">{b.pilha(direita)}</td>')
+        corpo += (
+            '<table role="presentation" cellpadding="0" cellspacing="0" border="0"'
+            ' style="margin:0;"><tr>' + "".join(celulas) + "</tr></table>"
+        )
+
+    corpo += b.nota()
+
+    fundo, _, cor_tabela = b.superficie()
+    html = "".join(
+        [
+            b.tabela(
+                estilo=(f"border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;{fundo}"),
+                cor_tabela=cor_tabela,
+            ),
+            "<tr>",
+            b.logo(),
+            b.celula(corpo),
+            "</tr>",
+            "</table>",
+        ]
+    )
+    return b.embrulho(html)
+
+
+def _render_boxed(b: _Blocos) -> str:
+    """Vertical, dentro de uma moldura.
+
+    A diferença para `stack` é a moldura, que **existe mesmo nos temas claros**.
+    Nos escuros a moldura quase não se vê porque o bloco já é opaco; nos claros
+    é o que dá à assinatura uma silhueta em vez de texto solto no fundo do
+    leitor.
+    """
+    theme = b.theme
+    body = b.pilha(b.identity()) + b.pilha(b.contactos()) + b.nota()
+
+    fundo, _, cor_tabela = b.superficie()
+    html = "".join(
+        [
+            b.tabela(
+                estilo=(
+                    "border-collapse:separate;font-family:Arial,Helvetica,sans-serif;"
+                    f"border:1px solid {theme.border};border-radius:8px;"
+                    f"padding:12px 14px;{fundo}"
+                ),
+                cor_tabela=cor_tabela,
+            ),
+            "<tr>",
+            b.logo(),
+            b.celula(body),
+            "</tr>",
+            "</table>",
+        ]
+    )
+    return b.embrulho(html, padding_interno=True)
+
+
+#: Índice de ``data.layout`` para a função que desenha. Preenchido depois das
+#: funções, por isso `_Blocos` tem de estar definida antes.
+_RENDERERS = {
+    "stack": _render_stack,
+    "compact": _render_compact,
+    "columns": _render_columns,
+    "boxed": _render_boxed,
+}
+
+
+def render_html(data: SignatureData, settings: Settings) -> str:
+    """Devolve o HTML da assinatura. É isto, byte a byte, que vai para o email."""
+    render = _RENDERERS.get(data.layout, _render_stack)
+    return render(_Blocos(data, settings))
 
 
 def render_plain(data: SignatureData, settings: Settings) -> str:
@@ -366,7 +686,9 @@ def client_instructions(client: str) -> str:
 
 
 __all__ = [
+    "DEFAULT_LAYOUT",
     "DEFAULT_THEME",
+    "LAYOUTS",
     "LINK_KEYS",
     "SIGNATURE_MARKER",
     "THEMES",

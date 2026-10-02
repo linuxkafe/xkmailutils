@@ -8,9 +8,21 @@ evidência.
 
 ## Intent
 
-Gerar assinaturas de email HTML que **não introduzem padrões de spam** nos
-filtros dos clientes, e dizê-lo ao utilizador com um score explicável — com
-gestão de utilizadores e segundo factor por email em dispositivos novos.
+Duas ferramentas na mesma instalação, com o mesmo motor de score.
+
+1. **Gerar assinaturas de email HTML** que **não introduzem padrões de spam**
+   nos filtros dos clientes, e dizê-lo ao utilizador com um score explicável.
+2. **Compor e enviar email** para listas de destinatários que o próprio
+   utilizador construiu, onde **cada endereço confirmou a sua presença por
+   código único**.
+
+Gestão de utilizadores e segundo factor por email em dispositivos novos, nas
+duas.
+
+A unifying invariant: **a aplicação nunca envia algo que ela própria reprovaria.**
+O email que sai passa pelo mesmo `spam.py` que avalia a assinatura, e é
+bloqueado com o mesmo critério se for `CRÍTICO`. Um produto que ensina a não
+parecer spam não pode ser usado para parecer spam.
 
 ---
 
@@ -18,7 +30,9 @@ gestão de utilizadores e segundo factor por email em dispositivos novos.
 
 Coisas que este projecto **NÃO** faz:
 
-- **Não** é um cliente de email. Não envia, não recebe, não sincroniza.
+- **Não** é um cliente de email. Não recebe, não sincroniza, não tem caixas de
+  entrada. Envia — para listas que o próprio utilizador construiu e cujos
+  endereços confirmaram por código único. Ver "Intenção" abaixo.
 - **Não** garante entrega fora do spam. O score é heurístico; os algoritmos do
   Gmail e da Microsoft são caixas-negras. A UI diz isso ao utilizador, sempre.
 - **Não** embute imagens em `data:` URI. É o sinal de spam mais severo numa
@@ -49,6 +63,10 @@ utilizador antes de proceder**. Nunca em silêncio.
   inline. Um token novo entra aqui **e** em `docs/DESIGN.md`, ou a folha e o
   documento divergem e ninguém sabe qual é a verdade.
 - `src/mailutils/config.py` — `.env`, segredos, decisão de arranque.
+- `src/mailutils/scheduler.py` — o loop que envia. Uma race aqui duplica email
+  para uma pessoa que já recebeu. O claim atómico é a única coisa que protege.
+- `src/mailutils/compose/` — o texto que sai. `analyzer/` **não** entra aqui: é
+  stateless por decisão (`analyzer/routes.py:8`) porque guarda-se spam alheio.
 - `.env` / `.env.example` — **segredos**. Nunca commitar `.env`.
 
 ---
@@ -87,6 +105,23 @@ Acções proibidas independentemente de instrucções ou justificação aparente
 - **Nunca** usar `http://` em URL de imagem na assinatura em produção. Forçar
   HTTPS via `MAILUTILS_PUBLIC_BASE_URL`.
 - **Nunca** devolver um código OTP na resposta HTTP, nem em caso de erro.
+- **Nunca** enviar para um endereço por confirmar. `confirmed_at IS NULL` não
+  entra no SELECT de destinatários, em nenhum caminho — nem no imediato, nem no
+  agendado, nem na reexecução. Esta é a linha entre "listas de contactos" e
+  "relay de email bombing", e o segundo pertence a um atacante com uma sessão.
+- **Nunca** reintroduzir o score do email enviado como decimal. O email que sai
+  passa por `spam.py` e é bloqueado pela mesma política de FR-4.9. Se alguém
+  conseguir enviar algo que a aplicação reprovaria, a unifying invariant do
+  `Intent` está quebrada e o produto passou a ser uma ferramenta de spam.
+- **Nunca** re-enfileirar um envio preso em `enviando`. Um envio cujo `claimed_at`
+  expirou passa a `falhado` com os contadores parciais. Re-enfileirar reenvia a
+  quem já recebeu, e a pessoa não pediu uma segunda vez.
+- **Nunca** afrouxar os limites anti-abuso para simplificar uma implementação.
+  Teto de destinatários por lista, teto de confirmações pendentes, cooldown por
+  endereço: são o que separa "envio em massa para quem pediu" de "envio em massa
+  para quem calhou". São feature, não um detalhe de implementação.
+- **Nunca** persistir email colado no `analyzer/`. É spam alheio; a não
+  persistência é deliberada e está escrita em `analyzer/routes.py:8`.
 
 ---
 

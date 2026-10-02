@@ -32,7 +32,45 @@
   vê quem está activo e desliga quem saiu.
 - **Sucesso medido:** nunca precisou de abrir a base de dados à mão.
 
+## Persona 4 — Marta, de uma studio pequena (utilizador de envio)
+
+> **Nota de honestidade epistémica:** esta persona não veio de entrevista nem de
+> um pedido documentado. Foi escrita por mim (agente) para satisfazer a regra
+> de `ROADMAP.md` — *"um item só entra em `planeado` depois de existir uma
+> Persona a precisar dele"* — depois de o dono decidir inverter o Non-Goal.
+> **Se a pessoa real for outra, esta persona está errada e as FR-6/7/8 estão
+> dimensionadas para o caso errado.** O que está abaixo é o pior caso
+> razoável, não o caso observado. Tratar como hipótese, não como evidência.
+>
+> Nenhuma das personas 1–3 precisa disto. Alexandra envia do Thunderbird, Bruno
+> copia HTML, Rui opera. Nenhuma delas tem uma lista de destinatários que
+> confirmaram presença. É por isso que isto é uma audiência **nova**, e não uma
+> extensão das existentes.
+
+- **Contexto:** coordena três grupos de trabalho. Uma vez por mês escreve uma
+  actualização para quem pediu para a receber — clientes do estúdio e
+  colaboradores. O Thunderbird chega para escrever uma linha; não chega para
+  150 destinatários, cada um com nome e com estado de confirmação diferente, e
+  para um envio que às vezes tem de ficar agendado para as 9h de uma terça.
+- **Já tentou:** BCC a todos de uma vez (acabou no spam, e a reputação do domínio
+  ficou), uma ferramenta de newsletters SaaS (pediu um painel inteiro para
+  enviar trinta linhas por mês), e um script próprio que enviava sem confirmar
+  quem queria receber.
+- **Frustração central:** não tem um sítio onde o destinatário diga *"quero
+  receber isto"*. Tudo o que encontrou ou ignora o assunto ou exige um contrato
+  de Serum que não leu.
+- **O que precisa:** escrever o texto, ver o score de spam **antes** de mandar,
+  adicionar endereços, e ter a certeza de que **quem não confirmou não recebe**.
+- **Medo:** o oposto de Alexandra. Alexandra tem medo de o email cair no spam;
+  Marta tem medo de **ser ela a ser o spam** — e de acordar com o domínio numa
+  lista negra por causa de um duplo clique.
+- **Sucesso medido:** o envio do mês é um rascunho, um score, e um agendamento.
+  Zero BCC. Zero surpresas de quem recebeu.
+
 ## Fora do âmbito como personas
 
-Consumidores finais, equipas de marketing com landing pages e quem precisa de
-assinatura em GIF animado — bloqueado por peso e por penalização de spam.
+Consumidores finais, quem quer uma ferramenta de marketing com segmentos e
+campanhas, quem precisa de assinatura em GIF animado (bloqueado por peso e por
+penalização de spam), e quem precisa de envio transaccional a partir de uma
+aplicação própria — bloqueado por NFR-10 (zero dependências) e porque o SMTP é
+configurado pelo operador, não gerido pelo produto.

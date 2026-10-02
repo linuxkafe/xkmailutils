@@ -17,7 +17,16 @@ from typing import Any
 
 #: Versão do esquema. Incrementar sempre que `migrate()` acrescenta DDL, e
 #: acrescentar o bloco correspondente em `_MIGRATIONS`.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
+
+#: Estrutura por omissão de uma assinatura guardada.
+#:
+#: Literal, e não `signatures.renderer.DEFAULT_LAYOUT`: `db.py` é o módulo de
+#: baixo nível e importar um módulo de functionality para preencher um `DEFAULT`
+#: de esquema inverte a ordem das dependências. A ligação entre os dois é
+#: assegurada por `tests/test_editor_flows.py`, que falha se este valor divergir
+#: do que o renderer usa.
+DEFAULT_SIGNATURE_LAYOUT = "stack"
 
 #: Statements idempotentes aplicados em ordem. SQLite não faz rollback de
 #: schema; por isso só se acrescenta, nunca se reescreve uma migração já aplicada.
@@ -115,11 +124,62 @@ _MIGRATIONS: tuple[str, ...] = (
         UNIQUE (user_id, name)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS recipient_lists (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name       TEXT    NOT NULL,
+        created_at TEXT    NOT NULL,
+        UNIQUE (user_id, name)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS list_addresses (
+        id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+        list_id                INTEGER NOT NULL REFERENCES recipient_lists(id) ON DELETE CASCADE,
+        email                  TEXT    NOT NULL,
+        name                   TEXT    NOT NULL DEFAULT '',
+        confirmed_at           TEXT,
+        confirmation_hash      TEXT,
+        confirmation_expires_at TEXT,
+        confirmation_attempts  INTEGER NOT NULL DEFAULT 0,
+        confirmation_sent_at   TEXT,
+        unsubscribed_at        TEXT,
+        created_at             TEXT    NOT NULL,
+        UNIQUE (list_id, email)
+    )
+    """,
     "CREATE INDEX IF NOT EXISTS idx_otp_user ON otp_codes (user_id, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id)",
     "CREATE INDEX IF NOT EXISTS idx_attempts_identifier ON login_attempts (identifier, created_at)",
     "CREATE INDEX IF NOT EXISTS idx_signatures_user ON signatures (user_id)",
+    "CREATE INDEX IF NOT EXISTS idx_recipient_lists_user ON recipient_lists (user_id)",
+    # O cooldown da confirmação é por endereço, em qualquer lista: espalhar o
+    # mesmo endereço por cinco listas não contorna o cooldown.
+    "CREATE INDEX IF NOT EXISTS idx_list_addresses_email ON list_addresses (email)",
+    "CREATE INDEX IF NOT EXISTS idx_list_addresses_list ON list_addresses (list_id)",
 )
+
+
+def _add_column(conn: sqlite3.Connection, table: str, column: str, declaration: str) -> None:
+    """Acrescenta uma coluna se ainda não existir.
+
+    `ALTER TABLE ... ADD COLUMN` **não** é idempotente no SQLite: a segunda vez
+    levanta `duplicate column name`. Todas as entradas de `_MIGRATIONS` são
+    `CREATE ... IF NOT EXISTS` e por isso são seguras de reexecutar; um `ALTER`
+    não é, e `migrate()` reexecuta a lista toda em cada arranque. O guarda aqui
+    é o que mantém a lista no mesmo formato — toda idempotente.
+
+    Porquê coluna nova em vez de guardar o layout dentro de `fields_json`:
+    `fields_json` é o que o utilizador escreve no formulário, e o layout é uma
+    escolha da interface. Misturá-los faria com que uma assinatura restaurada de
+    um backup antigo trouxesse um layout que o utilizador nunca escolheu.
+    """
+    existentes = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column in existentes:
+        return
+    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+
 
 _INDEXES = (
     "CREATE INDEX IF NOT EXISTS idx_otp_user ON otp_codes (user_id, created_at)",
@@ -130,6 +190,8 @@ _INDEXES = (
 
 TABLE_NAMES = (
     "users",
+    "recipient_lists",
+    "list_addresses",
     "devices",
     "otp_codes",
     "sessions",
@@ -187,6 +249,14 @@ def migrate(conn: sqlite3.Connection) -> None:
     with transaction(conn):
         for statement in _MIGRATIONS:
             conn.execute(statement)
+        # Fora de `_MIGRATIONS` porque não é um statement: é um guarda. Ver a
+        # docstring de `_add_column`.
+        _add_column(
+            conn,
+            "signatures",
+            "layout",
+            f"TEXT NOT NULL DEFAULT '{DEFAULT_SIGNATURE_LAYOUT}'",
+        )
     conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
 

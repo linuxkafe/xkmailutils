@@ -33,6 +33,38 @@ A app tem gestão de utilizadores com **segundo factor por email apenas em
 dispositivos novos**, para que o estado da assinatura não fique exposto a quem
 encontre a palavra-passe noutro lado.
 
+## A segunda ferramenta — compor e enviar
+
+A mesma instalação sabe também **escrever e enviar email para listas de
+destinatários**. Não é um cliente de email: não recebe, não sincroniza, não tem
+caixas de entrada. Envia, e envia apenas para listas que o próprio utilizador
+construiu, onde **cada endereço confirmou a sua presença por código único**.
+
+3. O utilizador escreve assunto e corpo, escolhe uma lista e vê **o mesmo score
+   de spam** que vê na assinatura — o mesmo motor, as mesmas regras nomeadas.
+4. Manda agora ou agenda. O envio passa pelo mesmo `spam.py` e é bloqueado se
+   for `CRÍTICO`, pela mesma política que bloqueia a exportação da assinatura.
+
+### Porquê isto não é uma ferramenta de spam
+
+O risco óbvio de um produto que avalia spam é virar spam. Três decisões fecham
+esse caminho, e as três são código, não intenção:
+
+- **A lista é de quem a construiu.** Não há campo de destinatário livre, não há
+  BCC escrito à mão. Um endereço entra no `SELECT` de destinatários só depois de
+  `confirmed_at IS NOT NULL` — nenhum caminho, nem imediato, nem agendado, nem
+  reexecução.
+- **A aplicação não envia o que reprovaria.** O unifying invariant: o email que
+  sai passa pelo mesmo `spam.py` que avalia a assinatura. Um produto que ensina
+  a não parecer spam não pode ser usado para parecer spam.
+- **Há descadência e há um remetente identificável.** `List-Unsubscribe` com
+  one-click, e o envio é recusado sem endereço postal do remetente.
+
+O que isto **não** resolve: reputação de domínio. O score é heurístico e mede
+conteúdo, não comportamento. Duzentos emails para quem pediu é diferente de
+duzentos mil, e o produto não sabe a diferença — sabe é que ninguém foi
+confirmado por engano.
+
 ## Value
 
 - **O utilizador sabe o score antes de enviar.** Deixa de adivinhar.
@@ -42,6 +74,9 @@ encontre a palavra-passe noutro lado.
   (base64, scripts, tracking) estão desligadas e o produto diz porquê.
 - **Privacidade.** Self-hosted, sem telemetria, sem Letters, sem plano SaaS
   obrigatório. Os logótipos e o texto das assinaturas não saem da máquina.
+- **Quem não pediu, não recebe.** A confirmação por código é a diferença entre
+  uma lista de contactos e uma lista de spam, e está no esquema, não na
+  documentação.
 
 ## Limites honestos
 
@@ -50,6 +85,12 @@ encontre a palavra-passe noutro lado.
   O que o produto garante é **não introduzir** padrões de spam conhecidos.
 - A compatibilidade é testada contra assinaturas; o resto do email é do cliente
   de email, não nosso.
+- **O score não é garantia de entrega nem de reputação.** Um score de 0 é um
+  score baixo, não um email entregue. O produto não conhece o histórico do
+  domínio de quem envia, e é o histórico que os filtros do Gmail olham primeiro.
+- **A conformidade legal é do owner.** O produto exige remetente identificável
+  e descadência funcional, mas a suficiência jurídica disto varia por jurisdição.
+  Quem opera responde por isso. Ver NFR-17.
 
 ## Success criteria
 
@@ -57,5 +98,12 @@ encontre a palavra-passe noutro lado.
 |---|---|
 | Score de spam do output por omissão | ≤ 10 / 100 |
 | Tempo para gerar uma assinatura | < 60 s do login ao output |
+| Score de spam do email enviado | ≤ 10 / 100 sem assinatura anexada |
+| Destinatários com `confirmed_at IS NULL` num envio | **0** — sem excepção, em nenhum caminho |
 | Testes de cobertura | ≥ 80% (`make test-check`) |
 | Dependências externas novas | 0 |
+
+A terceira linha e a quarta são as que distinguem esta aplicação de um
+disparador de email. A quarta é verificável com uma mutação que troque
+`confirmed_at IS NOT NULL` por `1=1`: se o teste não morrer, a métrica está a
+ser afirmada e não provada.

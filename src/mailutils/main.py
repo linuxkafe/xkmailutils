@@ -21,6 +21,7 @@ from .admin.routes import router as admin_router
 from .analyzer.routes import router as analyzer_router
 from .auth import service
 from .auth.routes import router as auth_router
+from .lists.routes import router as lists_router
 from .signatures.routes import router as signature_router
 from .templates import setup_templates
 from .web import THEME_COOKIE, _Redirect
@@ -91,6 +92,7 @@ def create_app(settings: config.Settings | None = None) -> FastAPI:
     app.include_router(auth_router, prefix=prefix)
     app.include_router(signature_router, prefix=prefix)
     app.include_router(analyzer_router, prefix=prefix)
+    app.include_router(lists_router, prefix=prefix)
     app.include_router(admin_router, prefix=prefix)
     app.mount(f"{prefix}/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 

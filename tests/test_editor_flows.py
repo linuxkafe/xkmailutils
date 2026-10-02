@@ -15,7 +15,8 @@ from asgi_client import SyncASGIClient
 from conftest import csrf_from
 from test_auth_flows import _signed_in
 
-from mailutils.signatures import spam
+from mailutils import config, db
+from mailutils.signatures import renderer, spam
 
 PNG = bytes.fromhex(
     "89504e470d0a1a0a0000000d494844520000000100000001080600000"
@@ -41,11 +42,16 @@ FIELDS = {
 }
 
 
-def _save(app: SyncASGIClient, fields: dict, theme: str = "dark") -> None:
+def _save(app: SyncASGIClient, fields: dict, theme: str = "dark", layout: str = "stack") -> None:
     token = csrf_from(app, "/assinatura")
     app.post(
         "/assinatura/guardar",
-        data={"csrf_token": token, "fields": json.dumps(fields), "theme": theme},
+        data={
+            "csrf_token": token,
+            "fields": json.dumps(fields),
+            "theme": theme,
+            "layout": layout,
+        },
         follow_redirects=True,
     )
 
@@ -583,3 +589,169 @@ class TestOFicheiroExportadoMostraOSeusEstilos:
             "a CSP descartava o atributo, não porque o atributo lá não estivesse"
         )
         assert "mailutils-signature" in html, "o documento não tem a assinatura"
+
+
+class TestEstruturaDaAssinatura:
+    """A estrutura viaja do formulário até ao HTML exportado.
+
+    O caminho é: botão → campo escondido → `POST /guardar` → coluna `layout` →
+    `_build` → `render_html`. Um elo em falta aparece como uma assinatura que
+    volta ao vertical depois de guardar, e isso é exactamente o tipo de bug que
+    o T008 encontrou no editor — indetectável por testes que não vão do browser
+    ao HTML.
+    """
+
+    def test_default_do_esquema_bate_com_o_default_do_renderer(self) -> None:
+        """`db.py` guarda o default como literal, para não importar o renderer.
+
+        A consequence é que os dois podem divergir. Este teste é o que impede.
+        """
+        assert db.DEFAULT_SIGNATURE_LAYOUT == renderer.DEFAULT_LAYOUT
+
+    def test_toda_a_estrutura_chega_ao_html_exportado(
+        self, app: SyncASGIClient, conn, normal_user: int
+    ) -> None:
+        """Cada estrutura tem de produzir um HTML próprio, e esse HTML tem de
+        ser o que o utilizador descarrega.
+
+        O sinal que distingue cada uma está escolhido para sobreviver ao
+        `<body>` do documento exportado:
+        `compact` põe as ligações na segunda linha, `columns` tem as duas
+        colunas com `24px` de separación, `boxed` tem a moldura, e `stack` é o
+        único sem nenhuma das três marcas.
+        """
+        _signed_in(app, conn, normal_user)
+        vistos: set[str] = set()
+        for estrutura in sorted(renderer.LAYOUTS):
+            _save(app, FIELDS, layout=estrutura)
+            fragmento = corpo_exportado(app)
+            vistos.add(fragmento)
+            marco = MARCOS[estrutura]
+            assert marco in fragmento, f"a estrutura {estrutura!r} não é visível no HTML exportado"
+            # E é exactamente o que o renderer produz para essa estrutura.
+            assert fragmento == render_html_de(estrutura)
+        assert len(vistos) == len(renderer.LAYOUTS), (
+            "duas estruturas diferentes produzem o mesmo HTML: uma delas não está a ser usada"
+        )
+
+    def test_as_estruturas_sao_visivelmente_diferentes(
+        self, app: SyncASGIClient, conn, normal_user: int
+    ) -> None:
+        """Um utilizador que escolha «Compacto» tem de ver uma assinatura mais
+        baixa. Se as quatro produzissem o mesmo HTML, o selector seria mentira."""
+        _signed_in(app, conn, normal_user)
+        alturas: dict[str, int] = {}
+        for estrutura in sorted(renderer.LAYOUTS):
+            _save(app, FIELDS, layout=estrutura)
+            alturas[estrutura] = corpo_exportado(app).count("<table")
+        assert alturas["compact"] < alturas["stack"], (
+            f"o layout compacto não é mais baixo que o vertical: {alturas}"
+        )
+
+    def test_a_estrutura_e_guarded(self, app: SyncASGIClient, conn, normal_user: int) -> None:
+        _signed_in(app, conn, normal_user)
+        _save(app, FIELDS, layout="columns")
+        row = conn.execute("SELECT layout FROM signatures").fetchone()
+        assert row["layout"] == "columns"
+
+    def test_a_estrutura_ao_recarregar_a_pagina(
+        self, app: SyncASGIClient, conn, normal_user: int
+    ) -> None:
+        _signed_in(app, conn, normal_user)
+        _save(app, FIELDS, layout="boxed")
+        body = app.get("/assinatura").text
+        assert 'id="campo-layout" value="boxed"' in body
+
+    def test_por_omissao_e_vertical(self, app: SyncASGIClient, conn, normal_user: int) -> None:
+        _signed_in(app, conn, normal_user)
+        _save(app, FIELDS, layout=renderer.DEFAULT_LAYOUT)
+        row = conn.execute("SELECT layout FROM signatures").fetchone()
+        assert row["layout"] == renderer.DEFAULT_LAYOUT
+
+    def test_preview_respeita_a_estrutura(
+        self, app: SyncASGIClient, conn, normal_user: int
+    ) -> None:
+        """O preview e a exportação têm de concordar. Divergir era o caminho
+        mais fácil de introduzir aqui: dois sítios a chamar `_build` com
+        argumentos diferentes."""
+        _signed_in(app, conn, normal_user)
+        _save(app, FIELDS, layout="compact")
+        token = csrf_from(app, "/assinatura")
+        preview = app.post(
+            "/assinatura/preview",
+            data={
+                "csrf_token": token,
+                "fields": json.dumps(FIELDS),
+                "theme": "dark",
+                "layout": "compact",
+            },
+        ).json()
+        assert preview["html"] == render_html_de("compact")
+
+    def test_estrutura_desconhecida_cai_no_preview_sem_500(
+        self, app: SyncASGIClient, conn, normal_user: int
+    ) -> None:
+        """Um `layout` forjado no pedido não pode rebentar o preview."""
+        _signed_in(app, conn, normal_user)
+        token = csrf_from(app, "/assinatura")
+        response = app.post(
+            "/assinatura/preview",
+            data={
+                "csrf_token": token,
+                "fields": json.dumps(FIELDS),
+                "theme": "dark",
+                "layout": "inventado",
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["html"] == render_html_de("stack")
+
+    def test_o_editor_oferece_todas_as_estruturas(
+        self, app: SyncASGIClient, conn, normal_user: int
+    ) -> None:
+        _signed_in(app, conn, normal_user)
+        body = app.get("/assinatura").text
+        for estrutura in sorted(renderer.LAYOUTS):
+            assert f'data-layout="{estrutura}"' in body
+
+    def test_a_descricao_da_estructura_aparece(
+        self, app: SyncASGIClient, conn, normal_user: int
+    ) -> None:
+        """O botão não pode ser só «Compacto» sem explicar. Um utilizador que
+        não sabe a diferença entre as quatro estruturas escolhe ao acaso."""
+        _signed_in(app, conn, normal_user)
+        body = app.get("/assinatura").text
+        assert renderer.LAYOUTS["boxed"].description in body
+
+
+#: O que distingue cada estrutura no HTML exportado. Ver
+#: `test_toda_a_estrutura_chega_ao_html_exportado`.
+MARCOS = {
+    "stack": 'style="margin:0 0 4px 0;"',
+    "compact": " · ",
+    "columns": "padding:0 24px 0 0;vertical-align:top;",
+    "boxed": "border-radius:8px;",
+}
+
+
+def corpo_exportado(app: SyncASGIClient) -> str:
+    """O fragmento da assinatura dentro do documento exportado."""
+    exportado = app.get("/assinatura/exportar.html").text
+    fragmento = re.search(r"<body[^>]*>(.*)</body>", exportado, re.DOTALL)
+    assert fragmento, "o documento exportado não tem <body>"
+    return fragmento.group(1).strip()
+
+
+def render_html_de(estrutura: str) -> str:
+    """O HTML de uma estrutura, calculado sem passar pela aplicação."""
+    base = config.load_settings(env="development")
+    settings = config.Settings(
+        **{
+            **{f: getattr(base, f) for f in base.__dataclass_fields__},
+            "public_base_url": "https://mailutils.exemplo.pt",
+        }
+    )
+    built = renderer.build_signature_data(
+        {**FIELDS, "layout": estrutura, "theme": "dark"}, settings
+    )
+    return renderer.render_html(built, settings)

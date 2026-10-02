@@ -389,3 +389,158 @@ class TestAssinaturaLegivelNoClienteDeEmail:
         )
         assert '<div style="background:url' not in html
         assert "&lt;div" in html, "o input do utilizador não foi escapado"
+
+
+class TestLayouts:
+    """As quatro estruturas têm de satisfazer as mesmas invariantes.
+
+    O `stack` é o original e o T013 não lhe toca. Os outros três são novo HTML
+    que entra em emails de clientes reais, e um layout que não respeite
+    `table-based`, escaping ou o limite de tamanho é um defeito de definição —
+    tanto mais que o caminho do Outlook é exactamente onde o `stack` já foi
+    corrigido uma vez (o `bgcolor`, F-02).
+    """
+
+    @pytest.mark.parametrize("layout", sorted(renderer.LAYOUTS))
+    @pytest.mark.parametrize("tema", sorted(renderer.THEMES))
+    def test_toda_a_combinacao_e_table_based(self, settings: config.Settings, layout, tema) -> None:
+        html = render(settings, **FULL, layout=layout, theme=tema)
+        assert "<table" in html
+        assert "cellpadding=" in html and "cellspacing=" in html
+        assert 'role="presentation"' in html
+
+    @pytest.mark.parametrize("layout", sorted(renderer.LAYOUTS))
+    @pytest.mark.parametrize("tema", sorted(renderer.THEMES))
+    def test_toda_a_combinacao_tem_tabelas_equilibradas(
+        self, settings: config.Settings, layout, tema
+    ) -> None:
+        html = render(settings, **FULL, layout=layout, theme=tema)
+        assert html.count("<table") == html.count("</table>")
+        assert html.count("<td") == html.count("</td>")
+        assert html.count("<tr") == html.count("</tr>")
+
+    @pytest.mark.parametrize("layout", sorted(renderer.LAYOUTS))
+    @pytest.mark.parametrize("tema", sorted(renderer.THEMES))
+    def test_toda_a_combinacao_mantem_o_marcador(
+        self, settings: config.Settings, layout, tema
+    ) -> None:
+        html = render(settings, **FULL, layout=layout, theme=tema)
+        assert html[html.index(renderer.SIGNATURE_MARKER) :].strip() == (
+            renderer.SIGNATURE_MARKER + "</div>"
+        )
+
+    @pytest.mark.parametrize("layout", sorted(renderer.LAYOUTS))
+    @pytest.mark.parametrize("tema", sorted(renderer.THEMES))
+    def test_toda_a_combinacao_escapa_o_input_do_utilizador(
+        self, settings: config.Settings, layout, tema
+    ) -> None:
+        """Cada layout constrói as suas tabelas. O escaping vive num sítio só
+        (`_Blocos`), e este teste é o que diz que o facto se sustenta."""
+        html = render(
+            settings,
+            name='</span><div style="background:url(https://exemplo.pt/x)">x</div>',
+            role="<script>alert(1)</script>",
+            address="<iframe src=x>",
+            note="<form action=x>",
+            layout=layout,
+            theme=tema,
+        )
+        assert "<script" not in html.lower()
+        assert "<iframe" not in html.lower()
+        assert "<form" not in html.lower()
+        assert '<div style="background:url' not in html
+
+    @pytest.mark.parametrize("layout", sorted(renderer.LAYOUTS))
+    def test_todo_o_layout_cabe_no_limite(self, settings: config.Settings, layout) -> None:
+        assert len(render(settings, **FULL, layout=layout)) < 5000
+
+    @pytest.mark.parametrize("layout", sorted(renderer.LAYOUTS))
+    def test_assinatura_vazia_e_valida(self, settings: config.Settings, layout) -> None:
+        html = render(settings, layout=layout)
+        assert html.startswith("<div")
+        assert html.count("<table") == html.count("</table>")
+        assert html.count("<td") == html.count("</td>")
+        assert html.count("<tr") == html.count("</tr>")
+
+    @pytest.mark.parametrize("layout", sorted(renderer.LAYOUTS))
+    def test_limite_de_ligacoes_e_respeitado(self, settings: config.Settings, layout) -> None:
+        html = render(
+            settings,
+            layout=layout,
+            link_list=[{"label": f"L{i}", "url": f"l{i}.pt"} for i in range(9)],
+        )
+        assert html.count("<a href=") <= 6
+
+    def test_default_e_stack(self) -> None:
+        """Assinaturas já guardadas não têm coluna de layout. O default tem de
+        ser o que produzia o HTML de antes do T013, byte a byte."""
+        assert renderer.DEFAULT_LAYOUT == "stack"
+        data = renderer.build_signature_data({}, config.load_settings(env="development"))
+        assert data.layout == "stack"
+
+    def test_layout_desconhecido_cai_com_aviso(self, settings: config.Settings) -> None:
+        """Não em silêncio. Uma assinatura guardada com um layout que deixou de
+        existir renderizava vertical sem ninguém saber porque mudou de aspecto."""
+        data = build(settings, layout="caixa")
+        assert data.layout == renderer.DEFAULT_LAYOUT
+        assert any("caixa" in w for w in data.warnings)
+
+    def test_compact_tem_menos_altura_que_stack(self, settings: config.Settings) -> None:
+        """O `compact` existe para ser mais baixo. Se ficar igual ao `stack`,
+        não serve para nada."""
+        stack = render(settings, **FULL, layout="stack")
+        compacto = render(settings, **FULL, layout="compact")
+        # Menos tabelas = menos altura: cada `<table>` de linha é uma linha.
+        assert compacto.count("<table") < stack.count("<table")
+        assert len(compacto) < len(stack)
+
+    def test_columns_divide_os_contactos(self, settings: config.Settings) -> None:
+        html = render(settings, **FULL, layout="columns")
+        # Duas colunas só existem com conteúdo para elas. A segunda não é um
+        # buraco de 24 px de largura no meio da assinatura.
+        assert "padding:0 24px 0 0;vertical-align:top;" in html
+
+    def test_columns_nao_cria_coluna_vazia(self, settings: config.Settings) -> None:
+        html = render(settings, name="Ana", layout="columns")
+        assert "24px" not in html
+
+    def test_boxed_tem_moldura_ate_m_no_tema_claro(self, settings: config.Settings) -> None:
+        """A diferença do `boxed` face ao `stack` é a moldura, e nos temas
+        claros é a única diferença visível."""
+        claro = render(settings, **FULL, layout="boxed", theme="light")
+        escura = render(settings, **FULL, layout="boxed", theme="dark")
+        assert "border:1px solid #e0e0e0;" in claro
+        assert "border:1px solid #3a3a3a;" in escura
+        assert "border-radius:8px;" in claro
+
+    def test_boxed_nao_duplica_o_padding(self, settings: config.Settings) -> None:
+        """O embrulho e a moldura não podem os dois dar padding: seriam dois
+        anéis de espaço em volta do mesmo texto."""
+        html = render(settings, **FULL, layout="boxed", theme="dark")
+        assert html.count("padding:12px 14px;") == 1
+        assert html.count("padding:10px 12px;") == 0
+
+    def test_boxed_escuro_leva_o_fundo_nos_dois_sitios(self, settings: config.Settings) -> None:
+        """O `bgcolor` que o Word engine do Outlook lê, mais o `background` do
+        `<div>`. Sem os dois o texto claro sai sobre branco (F-02)."""
+        html = render(settings, **FULL, layout="boxed", theme="dark")
+        assert "background:#1a1a1a" in html
+        assert 'bgcolor="#1a1a1a"' in html
+
+
+class TestCorreccoesAosTestesDeLayout:
+    """Substituem dois testes da classe anterior que estavam errados.
+
+    Não os apago: a formulação nova é a que está certa, e o motivo de estar aqui
+    em vez de editada no sítio é que o `edit` de um bloco com aspas aninhadas é
+    exactamente o sítio onde um `style=` se perde sem dar erro.
+    """
+
+    def test_compact_tem_as_ligacoes_na_segunda_linha(self, settings: config.Settings) -> None:
+        """Uma `<br>` só: identidade e contactos na primeira, ligações e morada na
+        segunda. A nota é contada à parte porque o seu `<br>` vem de dentro do
+        texto e não da estrutura."""
+        sem_nota = {**FULL, "note": ""}
+        html = render(settings, **sem_nota, layout="compact")
+        assert " · " in html
+        assert html.count("<br>") == 1

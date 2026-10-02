@@ -18,22 +18,22 @@ está a mentir. A regra é: **ninguém escreve o resultado à mão.**
 ### M-01 — F-02
 
 - **Ficheiro:** `src/mailutils/signatures/renderer.py`
-- **Mutação:** `opaco = _precisa_de_fundo(theme)` → `opaco = False  # MUTACAO M-01`
+- **Mutação:** `opaco = _precisa_de_fundo(self.theme)` → `opaco = False  # MUTACAO M-01`
 - **Comando:** `python3 -m pytest tests/test_renderer.py -q --no-cov -k Legivel`
 - **Porque:** O tema escuro volta a não levar o fundo: texto #f0f0f0 sobre o branco do cliente dá 1.14:1 e a assinatura fica invisível. Era o F-02.
 - **Saída observada:**
 
 ```
-FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_todo_o_texto_do_tema_passa_4_5[dark]
+FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_todo_o_texto_do_tema_passa_4_5[navy]
 FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_tema_escuro_leva_o_fundo_em_dos_sitios
-3 failed, 4 passed, 49 deselected in 0.08s
+9 failed, 8 passed, 182 deselected in 0.17s
     (1s)
 ```
 
 ### M-02 — F-02
 
 - **Ficheiro:** `src/mailutils/signatures/renderer.py`
-- **Mutação:** `f"{cor_tabela} "` → `(removido)`
+- **Mutação:** `f'{cor_tabela} style="{estilo}">'` → `'style="{estilo}">'`
 - **Comando:** `python3 -m pytest tests/test_renderer.py -q --no-cov -k Legivel`
 - **Porque:** Fica o `background` no `<div>` mas sai o `bgcolor` do `<table>`. O Word engine do Outlook ignora `background` num div, pelo que a assinatura continua invisível no Outlook — que é onde a maior parte das pessoas a vê.
 - **Saída observada:**
@@ -41,7 +41,7 @@ FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_tema_
 ```
 =========================== short test summary info ============================
 FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_tema_escuro_leva_o_fundo_em_dos_sitios
-1 failed, 6 passed, 49 deselected in 0.06s
+1 failed, 16 passed, 182 deselected in 0.09s
     (1s)
 ```
 
@@ -56,8 +56,8 @@ FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_tema_
 ```
 FAILED e2e/test_fluxo_completo.py::test_tema_claro_por_clique - playwright._i...
 FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
-2 failed, 9 deselected in 24.06s
-    (25s)
+2 failed, 9 deselected in 23.64s
+    (24s)
 ```
 
 ### M-04 — F-05
@@ -71,7 +71,7 @@ FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
 ```
 =========================== short test summary info ============================
 FAILED e2e/test_fluxo_completo.py::test_o_score_actualiza_enquanto_se_escreve
-1 failed, 10 deselected in 4.75s
+1 failed, 10 deselected in 4.10s
     (5s)
 ```
 
@@ -101,8 +101,8 @@ FAILED tests/test_spam.py::TestOScoreEInteiro::test_o_analisador_da_um_int - ...
 ```
 =========================== short test summary info ============================
 FAILED e2e/test_fluxo_completo.py::test_a_barra_e_discriminante_com_um_score_nao_zero
-1 failed, 10 deselected in 4.19s
-    (5s)
+1 failed, 10 deselected in 3.97s
+    (4s)
 ```
 
 ### M-07 — F-08
@@ -116,7 +116,7 @@ FAILED e2e/test_fluxo_completo.py::test_a_barra_e_discriminante_com_um_score_nao
 ```
 =========================== short test summary info ============================
 FAILED tests/test_editor_flows.py::TestOFicheiroExportadoMostraOSeusEstilos::test_permite_estilos_inline
-1 failed, 2 passed, 47 deselected in 1.19s
+1 failed, 3 passed, 56 deselected in 1.70s
     (2s)
 ```
 
@@ -131,7 +131,7 @@ FAILED tests/test_editor_flows.py::TestOFicheiroExportadoMostraOSeusEstilos::tes
 ```
 =========================== short test summary info ============================
 FAILED tests/test_editor_flows.py::TestEditor::test_uma_assinatura_vazia_nao_promete_que_e_segura
-1 failed, 49 deselected in 0.25s
+1 failed, 59 deselected in 0.29s
     (1s)
 ```
 
@@ -180,7 +180,7 @@ FAILED tests/test_browser_regressions.py::TestAInstalaOCiTemDeTerTudo::test_toda
 ```
 =========================== short test summary info ============================
 FAILED e2e/test_fluxo_completo.py::test_o_preview_mostra_a_assinatura_como_ela_sai
-1 failed, 10 deselected in 4.06s
+1 failed, 10 deselected in 3.44s
     (4s)
 ```
 
@@ -195,8 +195,8 @@ FAILED e2e/test_fluxo_completo.py::test_o_preview_mostra_a_assinatura_como_ela_s
 ```
 FAILED e2e/test_fluxo_completo.py::test_tema_claro_por_clique - playwright._i...
 FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
-2 failed, 9 deselected in 24.36s
-    (25s)
+2 failed, 9 deselected in 23.35s
+    (24s)
 ```
 
 ### M-13 — F-17
@@ -244,4 +244,64 @@ FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test
     (1s)
 ```
 
-**Total: 15 mutações. Sem escape: nenhuma.**
+### M-16 — F-03
+
+- **Ficheiro:** `src/mailutils/signatures/renderer.py`
+- **Mutação:** `render = _RENDERERS.get(data.layout, _render_stack)` → `render = _RENDERERS[DEFAULT_LAYOUT]`
+- **Comando:** `python3 -m pytest tests/test_renderer.py tests/test_editor_flows.py -q --no-cov`
+- **Porque:** A escolha da estrutura deixa de ser lida e todas renderizam vertical. O selector da interface continua a marcar a estrutura escolhida, o campo escondido continua a ir no formulário, e a coluna `layout` continua a gravar o que o utilizador escolheu — a falha só aparece no email. É o T013 inteiro a partir-se sem um único sintoma na interface.
+- **Saída observada:**
+
+```
+FAILED tests/test_editor_flows.py::TestEstruturaDaAssinatura::test_toda_a_estrutura_chega_ao_html_exportado
+FAILED tests/test_editor_flows.py::TestEstruturaDaAssinatura::test_as_estruturas_sao_visivelmente_diferentes
+7 failed, 252 passed in 21.97s
+    (23s)
+```
+
+### M-17 — F-03
+
+- **Ficheiro:** `src/mailutils/signatures/renderer.py`
+- **Mutação:** `muted="#aec4d9",` → `muted="#2a3f52",`
+- **Comando:** `python3 -m pytest tests/test_renderer.py -q --no-cov -k Legivel`
+- **Porque:** O `muted` do tema `navy` passa de 9.69:1 para 1.6:1 sobre o seu próprio fundo. Cargo, empresa e morada tornam-se ilegíveis. Esta mutação prova que os temas novos do T013 entram no gate de contraste **sem** que ninguém escreva um teste novo: `TestAssinaturaLegivelNoClienteDeEmail` está parametrizado sobre `sorted(THEMES)`. Foi o que permitiu escolher as cores a calcular em vez de a olho.
+- **Saída observada:**
+
+```
+=========================== short test summary info ============================
+FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_todo_o_texto_do_tema_passa_4_5[navy]
+1 failed, 16 passed, 182 deselected in 0.09s
+    (1s)
+```
+
+### M-18 — F-01
+
+- **Ficheiro:** `src/mailutils/lists/service.py`
+- **Mutação:** `"   AND confirmed_at IS NOT NULL"` → `"   AND 1=1"`
+- **Comando:** `python3 -m pytest tests/test_lists.py -q --no-cov -k InvarianteCentral`
+- **Porque:** A unica clausula que separa uma lista de contactos de um relay de email bombing passa a ser `1=1`. Todos os pendentes — os que receberam um codigo de confirmacao e nunca responderam — entram no envio. O produto passa a enviar para quem nao pediu, usando o endereco de outra pessoa como remetente. E a mutacao que o `CLAUDE.md` proibe em letras: `confirmed_at IS NULL` nao entra no SELECT, em nenhum caminho.
+- **Saída observada:**
+
+```
+FAILED tests/test_lists.py::TestInvarianteCentral::test_confirmado_passa_a_ser_destinatario
+FAILED tests/test_lists.py::TestInvarianteCentral::test_descadenciado_deixa_de_ser_destinatario
+4 failed, 2 passed, 41 deselected in 1.68s
+    (2s)
+```
+
+### M-19 — F-01
+
+- **Ficheiro:** `src/mailutils/lists/service.py`
+- **Mutação:** `if ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations:` → `if ja_pendentes + len(a_inserir) >= settings.max_pending_confirmations + 10**6:`
+- **Comando:** `python3 -m pytest tests/test_lists.py -q --no-cov -k AntiAbuso`
+- **Porque:** O tecto de confirmacoes por confirmar deixa de existir. Um utilizador com sessao importa cinquenta mil enderecos e pede os codigos todos de uma vez. E o tecto anti-abuso que o `CLAUDE.md` diz ser feature e nao detalhe de implementacao.
+- **Saída observada:**
+
+```
+FAILED tests/test_lists.py::TestLimitesAntiAbuso::test_teto_de_pendentes_acumula_entre_listas
+FAILED tests/test_lists.py::TestLimitesAntiAbuso::test_confirmar_liberta_uma_vaga
+3 failed, 4 passed, 40 deselected in 2.12s
+    (3s)
+```
+
+**Total: 19 mutações. Sem escape: nenhuma.**

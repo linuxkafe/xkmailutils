@@ -38,6 +38,7 @@
     <nav class="nav" aria-label="Navegação principal">
       <a href="{{ raiz }}/assinatura" {% if rota == (raiz + '/assinatura') %}aria-current="page"{% endif %}>Assinatura</a>
       <a href="{{ raiz }}/analisar" {% if rota == (raiz + '/analisar') %}aria-current="page"{% endif %}>Analisar email</a>
+      <a href="{{ raiz }}/listas" {% if rota == (raiz + '/listas') %}aria-current="page"{% endif %}>Listas</a>
       <a href="{{ raiz }}/dispositivos" {% if rota == (raiz + '/dispositivos') %}aria-current="page"{% endif %}>Dispositivos</a>
       <a href="{{ raiz }}/perfil" {% if rota == (raiz + '/perfil') %}aria-current="page"{% endif %}>Perfil</a>
       {% if sessao.is_admin %}

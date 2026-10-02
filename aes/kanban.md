@@ -2,7 +2,7 @@
 project: mailutils
 created: 2026-09-29
 current_sprint: sprint-01
-current_ticket: "T008"
+current_ticket: "T015"
 ---
 
 # Kanban — mailutils
@@ -29,6 +29,7 @@ make run            # http://127.0.0.1:8000
 | Sprint | Objectivo | Estado |
 |--------|-----------|--------|
 | sprint-01 | Gerador de assinaturas + 2F por email + tema | done |
+| sprint-02 | Temas e estruturas (T013), depois listas, composição e envio | em curso |
 
 ## Tickets
 
@@ -36,6 +37,10 @@ make run            # http://127.0.0.1:8000
 |----|--------|-----------|--------|
 | T001 | Gerador de assinaturas sem padrões de spam, com 2F por email | P0 | done |
 | T008 | Playwright sobre o fluxo login → 2F → editor → score → exportar | P1 | review: 2 rondas |
+| T013 | Temas e estruturas da assinatura (7 paletas, 4 layouts) | P1 | done |
+| T014 | Listas de destinatários com confirmação por OTP + importação CSV | P1 | done |
+| T015 | Compositor com score + envio | P1 | planeado |
+| T016 | Agendamento de envios | P2 | planeado |
 
 ## Backlog
 
@@ -51,7 +56,10 @@ que o precise ou um requisito em `docs/REQUIREMENTS.md`.
 | `rodolfomatos/pdftools` não auditado (privado) | `docs/DESIGN.md` | O layout segue a convenção AES. Declarado como divergência. |
 | Testes E2E não cobrem o caminho de convite nem o de administração | `e2e/` | O suite cobre login, 2F, editor, score, exportação, tema e analisador. A gestão de utilizadores (convites, revogação) continua só por HTTP. |
 | O preview recarrega o `iframe` a cada alteração | `app.js:setPreview` | Visível como um piscar leve a 350 ms de distância. Escolha do dono entre rota sem estado (mais simples) e cache no servidor (sem piscar). Registado, não resolvido. |
-| A revisão de peer ainda não foi executada por um humano | `aes/peer-reviews/T008/` | O veredicto é REJECT até `human-validation.sh` ser corrido por alguém que não seja o autor do candidato. |
+| A revisão de peer ainda não foi executada por um humano | `aes/peer-reviews/T008/` | O veredicto é REJECT até `human-validation.sh` ser corrido por alguém que não seja o autor do candidato. **Dívida aceite pelo dono a 2026-10-02** para não bloquear o sprint 02. |
+| As 28 combinações de tema × estrutura nunca foram abertas num cliente de email | `renderer.py` | Os testes provam table-based, estilos inline e contraste 4.5:1. Não provam que o Outlook não deforme a moldura. Ver T013. |
+| `scripts/run-mutations.py` aponta para linhas literais do código-fonte | `run-mutations.py` | O refactor do T013 partiu M-01 e M-02. O gate apanhou e obrigou a reapontar, mas cada refactor futuro paga o mesmo. |
+| A Persona 4 foi escrita por um agente, não por entrevista | `PERSONAS.md` | As FR-6/7/8 estão dimensionadas para um caso suposto. Se a pessoa real for outra, o dimensionamento está errado. Declarado na própria persona. |
 | Contraste da `--text-soft` em light mode por confirmar | `app.css` | `#555555` sobre `#f5f5f5` dá 6.8:1 — passa. Em `--surface-elevated` (`#ffffff`) dá 7.4:1. OK, mas rever se a superfície mudar. |
 
 ## Notas de decisões
