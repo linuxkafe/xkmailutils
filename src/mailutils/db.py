@@ -17,7 +17,7 @@ from typing import Any
 
 #: Versão do esquema. Incrementar sempre que `migrate()` acrescenta DDL, e
 #: acrescentar o bloco correspondente em `_MIGRATIONS`.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 #: Estrutura por omissão de uma assinatura guardada.
 #:
@@ -183,6 +183,18 @@ _MIGRATIONS = _MIGRATIONS + (
     )
     """,
     "CREATE INDEX IF NOT EXISTS idx_senders_user ON senders (user_id)",
+    # `T017-B`: um rascunho por utilizador. O `user_id` é a chave primária e
+    # não uma coluna com índice, porque a decisão do dono foi um rascunho só —
+    # e um `UNIQUE` num rascunho por utilizador seria o mesmo esquema com uma
+    # coluna a mais.
+    """
+    CREATE TABLE IF NOT EXISTS compose_drafts (
+        user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        assunto    TEXT    NOT NULL DEFAULT '',
+        corpo      TEXT    NOT NULL DEFAULT '',
+        updated_at TEXT    NOT NULL
+    )
+    """,
 )
 
 # As colunas que a reconstrução tira de `list_addresses`. Estão aqui para o
@@ -287,6 +299,7 @@ _INDEXES = (
 TABLE_NAMES = (
     "users",
     "senders",
+    "compose_drafts",
     "recipient_lists",
     "list_addresses",
     "devices",

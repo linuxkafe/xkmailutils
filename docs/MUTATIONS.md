@@ -59,7 +59,7 @@ FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_tema_
 ```
 FAILED e2e/test_fluxo_completo.py::test_tema_claro_por_clique - playwright._i...
 FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
-2 failed, 9 deselected in 23.29s
+2 failed, 9 deselected in 24.07s
     (24s)
 ```
 
@@ -75,7 +75,7 @@ FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
 ```
 =========================== short test summary info ============================
 FAILED e2e/test_fluxo_completo.py::test_o_score_actualiza_enquanto_se_escreve
-1 failed, 10 deselected in 3.37s
+1 failed, 10 deselected in 3.66s
     (4s)
 ```
 
@@ -107,7 +107,7 @@ FAILED tests/test_spam.py::TestOScoreEInteiro::test_o_analisador_da_um_int - ...
 ```
 =========================== short test summary info ============================
 FAILED e2e/test_fluxo_completo.py::test_a_barra_e_discriminante_com_um_score_nao_zero
-1 failed, 10 deselected in 3.80s
+1 failed, 10 deselected in 3.74s
     (4s)
 ```
 
@@ -123,7 +123,7 @@ FAILED e2e/test_fluxo_completo.py::test_a_barra_e_discriminante_com_um_score_nao
 ```
 =========================== short test summary info ============================
 FAILED tests/test_editor_flows.py::TestOFicheiroExportadoMostraOSeusEstilos::test_permite_estilos_inline
-1 failed, 3 passed, 56 deselected in 1.28s
+1 failed, 3 passed, 56 deselected in 1.25s
     (2s)
 ```
 
@@ -139,7 +139,7 @@ FAILED tests/test_editor_flows.py::TestOFicheiroExportadoMostraOSeusEstilos::tes
 ```
 =========================== short test summary info ============================
 FAILED tests/test_editor_flows.py::TestEditor::test_uma_assinatura_vazia_nao_promete_que_e_segura
-1 failed, 59 deselected in 0.31s
+1 failed, 59 deselected in 0.30s
     (1s)
 ```
 
@@ -173,7 +173,7 @@ FAILED tests/test_browser_regressions.py::TestNenhumSelectorOrfaoEmAppCss::test_
 ```
 =========================== short test summary info ============================
 FAILED e2e/test_fluxo_completo.py::test_o_preview_mostra_a_assinatura_como_ela_sai
-1 failed, 10 deselected in 3.94s
+1 failed, 10 deselected in 3.95s
     (4s)
 ```
 
@@ -189,7 +189,7 @@ FAILED e2e/test_fluxo_completo.py::test_o_preview_mostra_a_assinatura_como_ela_s
 ```
 FAILED e2e/test_fluxo_completo.py::test_tema_claro_por_clique - playwright._i...
 FAILED e2e/test_fluxo_completo.py::test_tema_antes_de_entrar - playwright._im...
-2 failed, 9 deselected in 23.54s
+2 failed, 9 deselected in 23.93s
     (24s)
 ```
 
@@ -253,8 +253,8 @@ FAILED tests/test_mailer_and_images.py::TestOsCabecalhosQueOsFiltrosExigem::test
 ```
 FAILED tests/test_editor_flows.py::TestEstruturaDaAssinatura::test_toda_a_estrutura_chega_ao_html_exportado
 FAILED tests/test_editor_flows.py::TestEstruturaDaAssinatura::test_as_estruturas_sao_visivelmente_diferentes
-7 failed, 254 passed in 19.37s
-    (20s)
+7 failed, 254 passed in 16.05s
+    (17s)
 ```
 
 ### M-17 — F-03
@@ -269,7 +269,7 @@ FAILED tests/test_editor_flows.py::TestEstruturaDaAssinatura::test_as_estruturas
 ```
 =========================== short test summary info ============================
 FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_todo_o_texto_do_tema_passa_4_5[navy]
-1 failed, 16 passed, 184 deselected in 0.09s
+1 failed, 16 passed, 184 deselected in 0.10s
     (1s)
 ```
 
@@ -289,8 +289,8 @@ FAILED tests/test_renderer.py::TestAssinaturaLegivelNoClienteDeEmail::test_todo_
 ```
 FAILED tests/test_lists.py::TestInvarianteCentral::test_importado_nao_e_destinatario
 FAILED tests/test_lists.py::TestRemetenteConfirmado::test_uma_lista_sem_remetente_nao_envia
-2 failed, 12 passed, 41 deselected in 4.62s
-    (5s)
+2 failed, 12 passed, 41 deselected in 3.64s
+    (4s)
 ```
 
 ### M-19 — F-01
@@ -307,8 +307,8 @@ FAILED tests/test_lists.py::TestRemetenteConfirmado::test_uma_lista_sem_remetent
 ```
 =========================== short test summary info ============================
 FAILED tests/test_lists.py::TestRemetenteConfirmado::test_o_cooldown_e_por_remetente
-1 failed, 9 passed, 45 deselected in 2.81s
-    (4s)
+1 failed, 9 passed, 45 deselected in 2.71s
+    (3s)
 ```
 
 ### M-20 — F-01
@@ -323,8 +323,8 @@ FAILED tests/test_lists.py::TestRemetenteConfirmado::test_o_cooldown_e_por_remet
 ```
 =========================== short test summary info ============================
 FAILED tests/test_lists.py::TestLinkAssinado::test_o_token_de_um_nao_abre_o_outro
-1 failed, 5 passed, 49 deselected in 1.73s
-    (3s)
+1 failed, 5 passed, 49 deselected in 1.42s
+    (2s)
 ```
 
 ### M-21 — F-01
@@ -343,8 +343,8 @@ FAILED tests/test_lists.py::TestLinkAssinado::test_o_token_de_um_nao_abre_o_outr
 ```
 FAILED tests/test_lists.py::TestInvarianteCentral::test_descadencia_e_irreversivel_pelo_produto
 FAILED tests/test_lists.py::TestLinkAssinado::test_a_descadencia_e_idempotente
-2 failed, 8 passed, 45 deselected in 3.30s
-    (4s)
+2 failed, 8 passed, 45 deselected in 2.41s
+    (3s)
 ```
 
 ### M-22 — F-01
@@ -379,4 +379,62 @@ FAILED tests/test_renderer.py::TestStackNaoMudouUmByte::test_o_html_do_stack_e_o
     (1s)
 ```
 
-**Total: 22 mutações. Sem escape: nenhuma. Avulsas (a âncora já não existe no ficheiro): nenhuma.**
+### M-24 — F-01
+
+- **Ficheiro:** `src/mailutils/compose/service.py`
+- **Mutação:** `if avaliacao["bloqueado"]:` → `if False:`
+- **Estado:** `morreu`
+- **Comando:** `python3 -m pytest tests/test_compose.py -q --no-cov -k BloqueioNoEnvio`
+- **Porque:** O portão do `T017-B` desaparece: um email que a aplicação reprovaria sai. E a quebra da unifying invariant do `CLAUDE.md`, que diz que a aplicação nunca envia algo que ela própria reprovaria.
+
+A mutação substitui o `if` do **caminho de envio**, não o da interface: `avaliar()` continua a calcular o score e a dizer que está bloqueado, e a página continua a mostrar a barra a vermelho. Só o envio deixa de olhar.
+
+Por isso o `-k` é `BloqueioNoEnvio` e não `PortaoDeScore`: os testes do score continuam verdes com esta mutação aplicada, e um `-k` mais largo daria uma prova que passa pelo motivo errado.
+- **Saída observada:**
+
+```
+FAILED tests/test_compose.py::TestBloqueioNoEnvio::test_nao_envia_sem_pontuar
+FAILED tests/test_compose.py::TestBloqueioNoEnvio::test_bloqueado_diz_porque_e_nao_so_que_nao_pode
+2 failed, 1 passed, 22 deselected in 0.65s
+    (1s)
+```
+
+### M-25 — F-01
+
+- **Ficheiro:** `src/mailutils/compose/service.py`
+- **Mutação:** `"bloqueado": spam.bloqueado(relatorio["score"], regras),` → `"bloqueado": relatorio["score"] >= spam.CATEGORIES[3][1],`
+- **Estado:** `morreu`
+- **Comando:** `python3 -m pytest tests/test_compose.py -q --no-cov -k PortaoDeScore`
+- **Porque:** O bloqueio passa a ser decidido **só pelo score**, e a metade da `FR-4.9` que olha para a gravidade de cada regra desaparece. Um email com um único sinal crítico e texto suficiente para manter o total abaixo do limiar sai. E o que a `FR-4.9` diz na primeira linha: decidir só pelo total dava ao utilizador forma de contornar o bloqueio com mais texto.
+
+Morre em `test_a_gravidade_da_regra_bloqueia_so_por_si`, escrito exactamente para isto: precisa de um sinal crítico que o score não apanhe. Um email de texto de spam puro **não** o apanha — e há um teste separado a dizer que não deve, porque a calibração do `scoring.py` sobe a `crítico` no HTML perigoso e não num assunto agressivo.
+- **Saída observada:**
+
+```
+=========================== short test summary info ============================
+FAILED tests/test_compose.py::TestPortaoDeScore::test_a_gravidade_da_regra_bloqueia_so_por_si
+1 failed, 4 passed, 20 deselected in 1.41s
+    (2s)
+```
+
+### M-26 — F-01
+
+- **Ficheiro:** `src/mailutils/compose/service.py`
+- **Mutação:** `"<p>" + htmllib.escape(corpo)` → `"<p>" + corpo`
+- **Estado:** `morreu`
+- **Comando:** `python3 -m pytest tests/test_compose.py -q --no-cov -k Escapamento`
+- **Porque:** O corpo do operador deixa de ser escapado. O rascunho é do operador e o email vai para a caixa de outra pessoa: um `<script>` colado no rascunho passa a ser `<script>` no email de um destinatário.
+
+O `scoring.py` daria 50 pontos a isso — mas só **depois** do HTML estar montado e do `<script>` já lá estar. Com o score perfeito, um corpo com `<script>` sairia limpo.
+
+O que esta mutação prova é que o escape é a defesa e o score não: o escapamento tem de acontecer **antes** de qualquer pontuação. É a única mutação do gate que prova isso.
+- **Saída observada:**
+
+```
+FAILED tests/test_compose.py::TestEscapamento::test_o_html_escapa_o_que_o_operador_escreveu
+FAILED tests/test_compose.py::TestEscapamento::test_a_falha_de_escape_mata_a_mutacao
+2 failed, 23 deselected in 0.29s
+    (1s)
+```
+
+**Total: 25 mutações. Sem escape: nenhuma. Avulsas (a âncora já não existe no ficheiro): nenhuma.**

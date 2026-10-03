@@ -55,6 +55,41 @@ class Finding:
         }
 
 
+def bloqueado(score: int, findings) -> bool:
+    """A política de bloqueio da `FR-4.9`. **Um único sítio.**
+
+    Bloqueia se o score for `CRÍTICO` **ou** se *qualquer* regra for de gravidade
+    `crítica`. O score mede risco agregado; o bloqueio é política sobre o pior
+    sinal individual. Decidir só pelo total daria ao utilizador forma de
+    contornar o bloqueio com mais texto — que é o que a `FR-4.9` diz na
+    primeira frase.
+
+    **Esta função é partilhada por dois motores.** A assinatura é pontuada por
+    `spam.py` e o email completo por `analyzer/scoring.py`, e os dois têm de
+    decidir o bloqueio com a **mesma** política (`FR-7.3`): uma política mais
+    tolerante no compositor seria um caminho de envio que reprova o que a
+    aplicação reprovaria noutro sítio, que é exactamente a quebra da unifying
+    invariant. Por isso a decisão vive aqui e não em cada motor.
+
+    Aceita as **duas** representações de um finding, e a necessidade de o fazer
+    é o que torna a partilha honesta em vez de nominal: `spam.py` produz
+    objectos `Finding` (com `.gravidade`) e `scoring.analyse()` devolve
+    dicionários (com `["gravidade"]`), porque um vai para o template Jinja e o
+    outro é o que a API devolve.
+
+    Duas representações do mesmo conceito é uma hexadecimalidade do domínio que
+    vale a pena levar a sério: se esta função aceitasse só uma, o outro motor
+    teria de converter, e a conversão é onde uma política começa a divergir sem
+    ninguém dar por isso. Aceitar as duas e documentar é mais barato do que
+    unificar os dicionários com `Finding.as_dict()` num caminho novo.
+    """
+    for f in findings:
+        gravidade = f["gravidade"] if isinstance(f, dict) else f.gravidade
+        if gravidade == "critico":
+            return True
+    return score >= CATEGORIES[3][1]
+
+
 def categorise(score: int) -> tuple[str, str]:
     """Devolve (rótulo, descrição) para um score já clampado a 0..100."""
     label = "SEGURO"
@@ -291,7 +326,7 @@ def score_signature(html: str, plain_text: str = "") -> dict:
     #
     # Decidir só pelo total dava ao utilizador a forma de contornar o bloqueio
     # com mais texto. (FR-4.9)
-    bloqueada = score >= CATEGORIES[3][1] or any(f.gravidade == "critico" for f in findings)
+    bloqueada = bloqueado(score, findings)
 
     return {
         "score": score,

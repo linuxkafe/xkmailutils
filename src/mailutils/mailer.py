@@ -92,12 +92,19 @@ def _render_invite_email(invite_url: str, app_name: str, hours: int) -> tuple[st
     return subject, text, html
 
 
+#: Cabeçalhos que `send()` recusa, porque são do servidor SMTP e não do
+#: conteúdo. `From` e `To` vêm do remetente configurado pelo operador; deixar o
+#: compositor sobrescrever `From` dava-lhe a capacidade de enviar como outro.
+_HEADERS_RESERVADOS = frozenset({"from", "to", "subject", "date", "message-id"})
+
+
 def _build_message(
     settings: Settings,
     to_address: str,
     subject: str,
     text: str,
     html: str | None = None,
+    headers: dict[str, str] | None = None,
 ) -> EmailMessage:
     message = EmailMessage()
     message["Subject"] = subject
@@ -115,6 +122,17 @@ def _build_message(
     # que o destinatário pode verificar contra o domínio de quem diz enviar.
     message["Date"] = formatdate(localtime=True)
     message["Message-ID"] = make_msgid(domain=_dominio_de(settings.mail_from))
+
+    for nome, valor in (headers or {}).items():
+        chave = nome.lower()
+        if chave in _HEADERS_RESERVADOS:
+            raise MailError(f"O cabeçalho {nome} não pode ser definido pelo remetente.")
+        # `email.message` recusa um valor com CR ou LF. Um valor com
+        # quebras de linha é injecção de cabeçalhos — e o `List-Unsubscribe`
+        # tem uma `mailto:` que não pode conter nenhuma.
+        if "\n" in valor or "\r" in valor:
+            raise MailError(f"O cabeçalho {nome} tem uma quebra de linha.")
+        message[nome] = valor
 
     message.set_content(text)
     if html:
@@ -166,11 +184,18 @@ def send(
     subject: str,
     text: str,
     html: str | None = None,
+    headers: dict[str, str] | None = None,
 ) -> None:
     """Envia uma mensagem. Levanta `MailError` em falha — nunca engole.
 
     Engole seria pior: o utilizador ficaria à espera de um código que não
     existe, sem nenhuma indicação do porque.
+
+    `headers` junta cabeçalhos à mensagem (o compositor usa-o para
+    `List-Unsubscribe`, `FR-6.8`). Entra antes de `set_content`, porque os
+    cabeçalhos de um `EmailMessage` têm de estar no topo: o `set_content` é o
+    que converte a mensagem num multipart e a partir daí acrescentar cabeçalhos
+    põe-nos na parte errada.
     """
     if not to_address:
         raise MailError("Não há destinatário.")
@@ -182,7 +207,7 @@ def send(
         sys.stdout.write(f"\n[email:console] para={to_address} assunto={subject}\n{text}\n---\n")
         sys.stdout.flush()
         return
-    _send_smtp(settings, _build_message(settings, to_address, subject, text, html))
+    _send_smtp(settings, _build_message(settings, to_address, subject, text, html, headers))
 
 
 def _render_confirmation_email(

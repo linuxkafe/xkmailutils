@@ -613,6 +613,33 @@ def _regras_imagens(email: ParsedEmail) -> list[Finding]:
             )
         )
 
+    # Uma imagem `data:` é base64 dentro do HTML. É o sinal mais severo que
+    # existe numa assinatura e o `CLAUDE.md` proíbe gerá-lo em qualquer
+    # contexto. `spam.py` sempre teve esta regra — é a razão de o compositor
+    # não poder dar-se por satisfeito com um motor só. Esta lacuna apareceu
+    # porque o `T017-B` encontrou, ao escrever os testes, que um `data:` URI
+    # num email composto **não** era pontuado: o email saía com a mesma
+    # pontuação que um email limpo.
+    #
+    # A gravidade é `crítica` e não `alta` porque o `T017-A` do `CLAUDE.md` diz
+    # que uma imagem embebida é o que distingue um logótipo servido por URL de
+    # um email que carrega o ficheiro inteiro do outro lado do Atlantico.
+    for src in imagens:
+        if src.lower().startswith("data:"):
+            achados.append(
+                _finding(
+                    "IMG_DATA_URI",
+                    55,
+                    "critico",
+                    "Uma imagem está embebida como data: URI (texto base64 dentro do HTML).",
+                    "Sirva o logótipo por URL. Uma imagem embebida aumenta o "
+                    "email em dezenas de KB, não pode ser bloqueada nem "
+                    "redimensionada pelo cliente, e é um sinal que os filtros "
+                    "contam como spam.",
+                )
+            )
+            break
+
     for src in imagens:
         assinatura = r"(^|[/_.-])(1x1|px|spacer|beacon|track|open|impression)([/_.-]|$)"
         if re.search(assinatura, src, re.I):

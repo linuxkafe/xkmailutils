@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block titulo %}Compor — Enviar{% endblock %}
+
+{% block conteudo %}
+<h1>Compor</h1>
+
+{% if erro_chave == 'csrf' %}
+<p class="notice notice--erro" role="alert">A sessão expirou. Tenta outra vez.</p>
+{% elif erro_chave == 'lista' %}
+<p class="notice notice--erro" role="alert">Escolhe uma lista de destino válida.</p>
+{% elif aviso_chave == 'guardado' %}
+<p class="notice notice--ok" role="status">Rascunho guardado.</p>
+{% endif %}
+
+{% if relatorio %}
+<div class="card">
+  <h2>Resultado do envio</h2>
+  {% if relatorio.bloqueado %}
+    <p class="notice notice--aviso" role="alert">
+      <strong>Não foi enviado nada.</strong> {{ relatorio.motivo }}
+    </p>
+  {% else %}
+    <p class="notice notice--ok" role="status">
+      {{ relatorio.enviados }} enviado(s), {{ relatorio.falhados }} falhado(s),
+      {{ relatorio.omitidos }} omitido(s).
+    </p>
+  {% endif %}
+  {% if relatorio.regras_criticas %}
+    <h3>O que disparou o bloqueio</h3>
+    <ul class="lista-plana">
+      {% for r in relatorio.regras_criticas %}
+        <li>
+          <strong>{{ r.mensagem }}</strong>
+          {% if r.remediacao %}<br><span class="muted small">{{ r.remediacao }}</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% if relatorio.erros %}
+    <h3>Falhas</h3>
+    <ul class="lista-plana">
+      {% for classe, n in relatorio.erros.items() %}
+        <li><span class="mono">{{ classe }}</span> — {{ n }} vez(es)</li>
+      {% endfor %}
+    </ul>
+    <p class="muted small">
+      A classe da falha, nunca a mensagem. Uma mensagem de SMTP pode conter
+      credenciais, e dizê-la aqui é dizê-la a quem tem sessão.
+    </p>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Mensagem</h2>
+  <form method="post" action="{{ raiz }}/compor/rascunho" class="grid grid--form">
+    <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
+    <label for="assunto">Assunto</label>
+    <input type="text" id="assunto" name="assunto" value="{{ rascunho.assunto }}"
+           maxlength="200">
+    <label for="corpo">Corpo</label>
+    <textarea id="corpo" name="corpo" rows="12">{{ rascunho.corpo }}</textarea>
+    <p class="muted small">
+      Texto simples. O que escreveres aqui sai escapado no email — não há HTML
+      no corpo, e a tua assinatura é anexada automaticamente.
+    </p>
+    <button type="submit" class="btn btn--secondary">Guardar rascunho</button>
+  </form>
+</div>
+
+{% if avaliacao %}
+<div class="card">
+  <h2>Score de spam</h2>
+  <div class="score__bar">
+    <div class="score__fill" data-score="{{ avaliacao.score }}"></div>
+  </div>
+  <p class="small">
+    <strong>{{ avaliacao.score }} / 100 — {{ avaliacao.categoria }}</strong><br>
+    {{ avaliacao.descricao }}
+  </p>
+  {% if avaliacao.bloqueado %}
+    <p class="notice notice--aviso" role="alert">
+      <strong>O envio está bloqueado.</strong> O score mede risco agregado e o
+      bloqueio olha para o pior sinal individual — o que a política de
+      <code>FR-4.9</code> diz.
+    </p>
+  {% endif %}
+  {% if avaliacao.regras_criticas %}
+    <h3>Regras de gravidade crítica</h3>
+    <ul class="lista-plana">
+      {% for r in avaliacao.regras_criticas %}
+        <li>
+          <strong>{{ r.mensagem }}</strong>
+          {% if r.remediacao %}<br><span class="muted small">{{ r.remediacao }}</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% if avaliacao.regras %}
+    <details class="disclosure">
+      <summary>Todas as regras que dispararam ({{ avaliacao.regras | length }})</summary>
+      <ul class="lista-plana">
+        {% for r in avaliacao.regras %}
+          <li>
+            <span class="mono small">{{ r.regra }}</span>
+            +{{ r.pontos }} ({{ r.gravidade }}) — {{ r.mensagem }}
+          </li>
+        {% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Enviar</h2>
+  {% if listas_enviaveis %}
+    <form method="post" action="{{ raiz }}/compor/enviar" class="grid grid--form">
+      <input type="hidden" name="csrf_token" value="{{ sessao.csrf_token }}">
+      <input type="hidden" name="assunto" value="{{ rascunho.assunto }}">
+      <input type="hidden" name="corpo" value="{{ rascunho.corpo }}">
+      <label for="lista">Lista de destino</label>
+      <select id="lista" name="list_id" required>
+        {% for l in listas_enviaveis %}
+          <option value="{{ l.id }}">{{ l.name }} ({{ l.confirmados }} activo(s))</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn--primary">Enviar</button>
+    </form>
+    <p class="muted small">
+      O email é pontuado no momento do envio, com o mesmo motor que mostra o
+      score acima. Não há caminho que envie sem pontuar.
+    </p>
+  {% else %}
+    <p class="notice notice--aviso" role="status">
+      Nenhuma lista pode receber email. Uma lista precisa de um
+      <a href="{{ raiz }}/listas">remetente confirmado</a> e de destinatários.
+    </p>
+  {% endif %}
+
+  {% if listas and not listas_enviaveis %}
+    <h3>As tuas listas e o que falta</h3>
+    <ul class="lista-plana">
+      {% for l in listas %}
+        <li>
+          {{ l.name }} —
+          {% if l.sem_from %}
+            sem remetente escolhido
+          {% elif not l.from_confirmado %}
+            remetente por confirmar
+          {% elif not l.confirmados %}
+            sem destinatários activos
+          {% else %}
+            não pode receber
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</div>
+{% endblock %}

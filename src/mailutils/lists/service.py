@@ -274,7 +274,11 @@ def destinatarios(conn: sqlite3.Connection, list_id: int) -> dict[str, Any]:
         "enviavel": True,
         "destinatarios": list(
             conn.execute(
-                "SELECT email, name FROM list_addresses"
+                # O `id` vem no mesmo SELECT porque o compositor precisa dele
+                # para assinar o link de descadência, e um segundo query por
+                # destinatário num envio de 5000 pessoas são 5000 round-trips
+                # para descobrir um inteiro que já estava à mão.
+                "SELECT id, email, name FROM list_addresses"
                 " WHERE list_id = ?"
                 "   AND unsubscribed_at IS NULL"
                 " ORDER BY email",

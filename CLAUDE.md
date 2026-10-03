@@ -41,16 +41,21 @@ lá que se vai verificar, não aqui.
 Gestão de utilizadores e segundo factor por email em dispositivos novos, nas
 duas.
 
-A unifying invariant, **ainda por implementar**: a aplicação nunca envia algo
-que ela própria reprovaria. Quando existir, o email que sai é pontuado pelo
-mesmo motor que pontua qualquer email completo — `analyzer/scoring.py` — e é
-bloqueado pelo mesmo critério de `FR-4.9`. Está em `FR-7.3` e `NFR-19`, ambos
-`DRAFT`, porque o T017-B ainda não existe.
+A unifying invariant, **implementada no `T017-B`**: a aplicação nunca envia algo
+que ela própria reprovaria. O email que sai é pontuado por `analyzer/scoring.py`
+— o mesmo motor que pontua qualquer email completo — e é bloqueado pelo critério
+de `FR-4.9`, numa função só (`spam.bloqueado()`) que os dois motores usam.
 
-Escreve-se aqui no condicional, e não no presente, porque este ficheiro é lido
-antes de qualquer código. Um `CLAUDE.md` que afirma o que o código faz obriga o
-agente seguinte a procurar o caminho do envio e a não o encontrar. (F-01 da
-revisão T014, MAJOR.)
+**Não é uma convenção sobre onde escrever o código: é a estrutura das funções.**
+`compose/service.py` não tem caminho que chegue ao `mailer.send` sem passar por
+`avaliar()`, e `avaliar()` nunca envia. A mutação M-24 mata o `if` do caminho de
+envio e morre; a M-25 mata a política de `FR-4.9` e morre. Um botão que
+mostrasse o score e um `enviar()` que não o consultasse seriam duas coisas
+diferentes — e a segunda é a que decide.
+
+O que ainda **não** existe: agendamento (T017-C) e persistência dos envios. Por
+isso o `NFR-19` continua `DRAFT` e a cadência derivada do score (FR-8.6) também:
+o `cadence_seconds` existe como coluna e ainda não é lido por nada.
 
 **Dois motores de score, e não um.** `signatures/spam.py` pontua a assinatura e
 `analyzer/scoring.py` pontua o email completo. Um número de pontos não transfere
@@ -114,10 +119,16 @@ utilizador antes de proceder**. Nunca em silêncio.
   que separa "lista de contactos" de "relay de email bombing". Um
   `unsubscribed_at IS NOT NULL` num SELECT de envio é a linha que sobreviveu a
   esta inversão e que não pode ser esquecida.
+- `src/mailutils/compose/service.py` — **o caminho de envio.** Onde a unifying
+  invariant vive: `enviar()` não chega ao `mailer.send` sem `avaliar()`, e a
+  ordem dessas duas linhas é a garantia. `_html_do_email()` escapa o corpo do
+  operador, e é a defesa que o score não é.
+- `src/mailutils/analyzer/scoring.py` — o score do **email completo**, e portanto
+  o que decide se um email sai. É o portão do `Intent`, e o segundo motor de
+  score do projecto. Uma alteração aqui muda o que o produto deixa sair, e não
+  só o que ele mostra.
 - **A criar, e por isso listadas aqui com o ticket que as vai fazer:**
-  `compose/` (T015 — o texto que sai; `analyzer/` **não** entra lá: é stateless
-  por decisão, `analyzer/routes.py:8`, porque guarda-se spam alheio) e
-  `scheduler.py` (T016 — o loop que envia; uma race ali duplica email para
+  `scheduler.py` (T017-C — o loop que envia; uma race ali duplica email para
   quem já recebeu, e o claim atómico é a única coisa que protege).
 - `.env` / `.env.example` — **segredos**. Nunca commitar `.env`.
 
@@ -174,6 +185,10 @@ Acções proibidas independentemente de instrucções ou justificação aparente
   de que a invariant está cumprida. Se alguém conseguir enviar algo que a
   aplicação reprovaria, a unifying invariant está quebrada e o produto passou a
   ser uma ferramenta de spam.
+- **Nunca** escapar o corpo do operador depois de o pontuar. O corpo é texto
+  simples e entra no HTML **antes** de qualquer score; um `<script>` colado no
+  rascunho é um `<script>` no email de um destinatário, e `spam.py` só o veria
+  depois de o HTML já estar montado. O escape é a defesa, e a M-26 mata-o.
 - **Nunca** re-enfileirar um envio preso em `enviando`. Um envio cujo `claimed_at`
   expirou passa a `falhado` com os contadores parciais. Re-enfileirar reenvia a
   quem já recebeu, e a pessoa não pediu uma segunda vez.

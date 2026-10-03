@@ -41,13 +41,18 @@ def captured_emails(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
     """
     sent: list[dict] = []
 
-    def fake_send(settings, to_address, subject, text, html=None):  # noqa: ANN001
+    def fake_send(settings, to_address, subject, text, html=None, headers=None):  # noqa: ANN001
+        # `headers` foi acrescentado no `T017-B` para o `List-Unsubscribe`
+        # (FR-6.8). Capturá-lo é o que permite a um teste afirmar que o email
+        # saiu com a forma de sair — e o `headers` tem de ser uma cópia, senão
+        # um teste que o mutasse veria a mutação no email anterior.
         sent.append(
             {
                 "to": to_address,
                 "subject": subject,
                 "text": text,
                 "html": html,
+                "headers": dict(headers or {}),
                 "settings": settings,
             }
         )

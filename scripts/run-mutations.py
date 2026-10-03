@@ -431,7 +431,89 @@ MUTACOES: tuple[Mutacao, ...] = (
         "`tests/golden/stack.html`.",
         ("F-01",),
     ),
+    Mutacao(
+        "M-24",
+        "src/mailutils/compose/service.py",
+        '    if avaliacao["bloqueado"]:',
+        '    if False:',
+        (
+            "python3",
+            "-m",
+            "pytest",
+            "tests/test_compose.py",
+            "-q",
+            "--no-cov",
+            "-k",
+            "BloqueioNoEnvio",
+        ),
+        "O portão do `T017-B` desaparece: um email que a aplicação reprovaria "
+        "sai. E a quebra da unifying invariant do `CLAUDE.md`, que diz que a "
+        "aplicação nunca envia algo que ela própria reprovaria.\n\n"
+        "A mutação substitui o `if` do **caminho de envio**, não o da "
+        "interface: `avaliar()` continua a calcular o score e a dizer que está "
+        "bloqueado, e a página continua a mostrar a barra a vermelho. Só o envio "
+        "deixa de olhar.\n\n"
+        "Por isso o `-k` é `BloqueioNoEnvio` e não `PortaoDeScore`: os testes "
+        "do score continuam verdes com esta mutação aplicada, e um `-k` mais "
+        "largo daria uma prova que passa pelo motivo errado.",
+        ("F-01",),
+    ),
+    Mutacao(
+        "M-25",
+        "src/mailutils/compose/service.py",
+        '        "bloqueado": spam.bloqueado(relatorio["score"], regras),',
+        '        "bloqueado": relatorio["score"] >= spam.CATEGORIES[3][1],',
+        (
+            "python3",
+            "-m",
+            "pytest",
+            "tests/test_compose.py",
+            "-q",
+            "--no-cov",
+            "-k",
+            "PortaoDeScore",
+        ),
+        "O bloqueio passa a ser decidido **só pelo score**, e a metade da "
+        "`FR-4.9` que olha para a gravidade de cada regra desaparece. Um email "
+        "com um único sinal crítico e texto suficiente para manter o total abaixo "
+        "do limiar sai. E o que a `FR-4.9` diz na primeira linha: decidir só "
+        "pelo total dava ao utilizador forma de contornar o bloqueio com mais "
+        "texto.\n\n"
+        "Morre em `test_a_gravidade_da_regra_bloqueia_so_por_si`, escrito "
+        "exactamente para isto: precisa de um sinal crítico que o score não "
+        "apanhe. Um email de texto de spam puro **não** o apanha — e há um teste "
+        "separado a dizer que não deve, porque a calibração do `scoring.py` sobe a "
+        "`crítico` no HTML perigoso e não num assunto agressivo.",
+        ("F-01",),
+    ),
+    Mutacao(
+        "M-26",
+        "src/mailutils/compose/service.py",
+        '        "<p>" + htmllib.escape(corpo)',
+        '        "<p>" + corpo',
+        (
+            "python3",
+            "-m",
+            "pytest",
+            "tests/test_compose.py",
+            "-q",
+            "--no-cov",
+            "-k",
+            "Escapamento",
+        ),
+        "O corpo do operador deixa de ser escapado. O rascunho é do operador e o "
+        "email vai para a caixa de outra pessoa: um `<script>` colado no "
+        "rascunho passa a ser `<script>` no email de um destinatário.\n\n"
+        "O `scoring.py` daria 50 pontos a isso — mas só **depois** do HTML estar "
+        "montado e do `<script>` já lá estar. Com o score perfeito, um corpo com "
+        "`<script>` sairia limpo.\n\n"
+        "O que esta mutação prova é que o escape é a defesa e o score não: o "
+        "escapamento tem de acontecer **antes** de qualquer pontuação. É a única "
+        "mutação do gate que prova isso.",
+        ("F-01",),
+    ),
 )
+
 
 def correr(mutacao: Mutacao) -> tuple[str, str]:
     """Aplica a mutação, corre o comando e reverte. Devolve (estado, saída).

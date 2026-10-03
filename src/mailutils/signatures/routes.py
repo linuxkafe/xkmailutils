@@ -18,10 +18,10 @@ from fastapi.responses import Response
 
 from .. import security
 from ..config import Settings
-from ..db import dumps_fields, loads_fields, transaction
+from ..db import dumps_fields, transaction
 from ..templates import page
 from ..web import Session, csrf_is_valid, get_db, ir, require_session
-from . import images, renderer, spam
+from . import build, images, renderer
 
 router = APIRouter(prefix="/assinatura")
 
@@ -451,19 +451,8 @@ def _standalone_document(fragment: str, *, preview: bool = False) -> str:
 
 
 def _form_fields(raw: str) -> dict[str, str]:
-    """Lê os campos do formulário a partir de JSON.
-
-    JSON e não campos soltos porque o editor manda links dinamicamente, e uma
-    lista de `link_url_1`, `link_url_2`… é uma superfície de input que ninguém
-    consegue validar a olho.
-    """
-    try:
-        data = json.loads(raw or "{}")
-    except (ValueError, TypeError):
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    return {key: str(data.get(key, "")) for key in FIELD_KEYS if key in data}
+    """Os campos editáveis do formulário, vindos do módulo partilhado."""
+    return build.carregar_campos(raw)
 
 
 def _build(
@@ -473,56 +462,24 @@ def _build(
     logo: dict[str, Any] | None,
     layout: str = renderer.DEFAULT_LAYOUT,
 ) -> dict[str, Any]:
-    """Pipeline único de construção: dados → HTML → texto → score.
+    """O pipeline único de construção. Vive em `signatures/build.py` (FR-3.8).
 
-    Preview, página inicial e exportação passam todos por aqui. Um único
-    caminho é a única forma de a assinatura mostrada ser a assinatura
-    entregue. (FR-3.8)
+    Delegado e não copiado: o compositor (`T017-B`) usa o mesmo, e uma cópia
+    divergiria no primeiro patch.
     """
-    payload = dict(data)
-    payload["logo_url"] = (logo or {}).get("url", "")
-    payload["theme"] = theme
-    payload["layout"] = layout
-    built = renderer.build_signature_data(payload, settings)
-    html = renderer.render_html(built, settings)
-    plain = renderer.render_plain(built, settings)
-    return {
-        "html": html,
-        "plain": plain,
-        "score": spam.score_signature(html, plain),
-        "dados": built,
-    }
+    return build.construir(settings, data, theme, logo, layout)
 
 
 def _load_signature(conn: sqlite3.Connection, user_id: int) -> dict[str, Any] | None:
-    row = conn.execute(
-        "SELECT * FROM signatures WHERE user_id = ? AND name = ?", (user_id, SIGNATURE_NAME)
-    ).fetchone()
-    if row is None:
-        return None
-    return {
-        "id": row["id"],
-        "theme": row["theme"],
-        "layout": row["layout"],
-        "logo_id": row["logo_id"],
-        "fields": loads_fields(row["fields_json"]),
-    }
+    """A assinatura guardada deste utilizador, ou `None`."""
+    return build.carregar_assinatura(conn, user_id)
 
 
 def _load_logo(
     settings: Settings, conn: sqlite3.Connection, signature: dict[str, Any] | None
 ) -> dict[str, Any] | None:
-    if not signature or not signature.get("logo_id"):
-        return None
-    row = conn.execute("SELECT * FROM logos WHERE id = ?", (signature["logo_id"],)).fetchone()
-    if row is None:
-        return None
-    return {
-        "url": settings.public_media_url(row["filename"]),
-        "width": row["width"],
-        "height": row["height"],
-        "bytes": row["byte_size"],
-    }
+    """O logótipo da assinatura, ou `None`."""
+    return build.carregar_logo(settings, conn, signature)
 
 
 def _json(payload: dict[str, Any]) -> str:

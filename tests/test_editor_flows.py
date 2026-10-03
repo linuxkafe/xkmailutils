@@ -418,7 +418,12 @@ class TestExport:
             report["exportacao_bloqueada"] = True
             return report
 
-        monkeypatch.setattr("mailutils.signatures.routes.spam.score_signature", critical)
+        # O `T017-B` extraiu a construção para `signatures/build.py`, e o score
+        # passou a ser calculado lá. Apontar o patch para `routes` era apanhar o
+        # sítio errado: o teste passava a testar que a rota existe, não que o
+        # score bloqueia. Um monkeypatch que aponta para o sítio errado é um
+        # teste que deixa de provar o que diz provar — e passa a verde.
+        monkeypatch.setattr("mailutils.signatures.build.spam.score_signature", critical)
         response = app.get("/assinatura/exportar.html", follow_redirects=False)
         assert response.status_code == 303
         assert "erro=bloqueado" in response.headers["location"]
