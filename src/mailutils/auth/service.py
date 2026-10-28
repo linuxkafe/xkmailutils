@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from .. import security
 from ..config import Settings
 from ..db import transaction
-from ..mailer import send_invite, send_otp
+from ..mailer import send_invite, send_otp, send_password_reset
 
 #: Motivo de bloqueio devolvido ao login. Exposto como constante porque a rota o
 #: mostra ao utilizador e o teste precisa de o referenciar.
@@ -551,6 +551,104 @@ def list_users(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+# --------------------------------------------------------------------------
+# Recuperação de palavra-passe
+# --------------------------------------------------------------------------
+
+
+#: Tempo de vida de um token de reposição. Curto o suficiente para não ficar
+#: numa caixa de correio esquecida; longo o suficiente para chegar ao fim de
+#: um email e abrir o link.
+PASSWORD_RESET_TTL_MINUTES = 30
+
+
+def request_password_reset(conn: sqlite3.Connection, settings: Settings, email: str) -> None:
+    """Pede a reposição da palavra-passe.
+
+    Não revela se o email existe: o mesmo caminho corre sempre, e só se envia
+    email quando há utilizador. Revoga tokens anteriores pendentes para o mesmo
+    utilizador, para que só o último link funcione.
+    """
+    normalised = security.normalise_email(email)
+    user = get_user_by_email(conn, normalised)
+    if user is None or not user["is_active"]:
+        return
+    with transaction(conn):
+        conn.execute(
+            "UPDATE password_resets SET consumed_at = ? WHERE user_id = ? AND consumed_at IS NULL",
+            (security.iso(security.utcnow()), user["id"]),
+        )
+    token = security.new_token()
+    now = security.utcnow()
+    expires = security.in_minutes(PASSWORD_RESET_TTL_MINUTES, now)
+    with transaction(conn):
+        conn.execute(
+            "INSERT INTO password_resets (user_id, token_hash, created_at, expires_at)"
+            " VALUES (?, ?, ?, ?)",
+            (
+                user["id"],
+                security.hash_token(token),
+                security.iso(now),
+                security.iso(expires),
+            ),
+        )
+    reset_url = f"{settings.public_url('/recuperar')}/{token}"
+    try:
+        send_password_reset(settings, normalised, reset_url, PASSWORD_RESET_TTL_MINUTES)
+    except Exception:
+        with transaction(conn):
+            conn.execute(
+                "UPDATE password_resets SET consumed_at = ? WHERE token_hash = ?",
+                (security.iso(security.utcnow()), security.hash_token(token)),
+            )
+        return
+
+
+def get_password_reset_by_token(conn: sqlite3.Connection, token: str) -> sqlite3.Row | None:
+    if not token:
+        return None
+    return conn.execute(
+        "SELECT * FROM password_resets WHERE token_hash = ?", (security.hash_token(token),)
+    ).fetchone()
+
+
+def reset_password(
+    conn: sqlite3.Connection, settings: Settings, token: str, password: str
+) -> tuple[bool, str]:
+    """Consome um token e define a nova palavra-passe.
+
+    Devolve (sucesso, razão). Em sucesso revoga todas as sessões.
+    """
+    reset = get_password_reset_by_token(conn, token)
+    if reset is None:
+        return False, "Token inválido."
+    if reset["consumed_at"] is not None:
+        return False, "Token já usado."
+    if security.is_expired(reset["expires_at"]):
+        return False, "Token expirado."
+    problem = security.password_problem(password)
+    if problem:
+        return False, problem
+    user = get_user(conn, reset["user_id"])
+    if user is None or not user["is_active"]:
+        return False, "Conta inactiva."
+    try:
+        set_password(conn, reset["user_id"], password)
+    except ValueError as exc:
+        return False, str(exc)
+    with transaction(conn):
+        conn.execute(
+            "UPDATE password_resets SET consumed_at = ? WHERE id = ?",
+            (security.iso(security.utcnow()), reset["id"]),
+        )
+        conn.execute(
+            "UPDATE password_resets SET consumed_at = ? WHERE user_id = ? AND consumed_at IS NULL",
+            (security.iso(security.utcnow()), reset["user_id"]),
+        )
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (reset["user_id"],))
+    return True, ""
+
+
 __all__ = [
     "ACCOUNT_INACTIVE",
     "CHALLENGE_EXHAUSTED",
@@ -583,6 +681,10 @@ __all__ = [
     "register_device",
     "revoke_device",
     "revoke_invite",
+    "PASSWORD_RESET_TTL_MINUTES",
+    "get_password_reset_by_token",
+    "request_password_reset",
+    "reset_password",
     "send_invitation",
     "set_active",
     "set_password",

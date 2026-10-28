@@ -17,7 +17,7 @@ from fastapi.responses import RedirectResponse, Response
 
 from .. import security
 from ..config import Settings
-from ..templates import page
+from ..templates import MESSAGENS, page
 from ..web import (
     THEME_COOKIE,
     Session,
@@ -421,6 +421,116 @@ def change_password(
     # comprometida, trocar a senha tem de expulsar quem entrou com a antiga.
     revoke_all_sessions(conn, session.user_id)
     return ir(request, "/perfil?aviso=alterada")
+
+
+# --------------------------------------------------------------------------
+# Recuperação de palavra-passe
+# --------------------------------------------------------------------------
+
+
+@router.get("/recuperar")
+@router.get("/esqueci")
+@router.get("/forgot")
+@router.get("/forgot-password")
+@router.get("/reset-password")
+def recover_form(request: Request, conn: Db) -> Response:
+    return _public_page(request, "recuperar.html", "recuperar", extra={})
+
+
+@router.post("/recuperar")
+@router.post("/esqueci")
+@router.post("/forgot")
+@router.post("/forgot-password")
+@router.post("/reset-password")
+def recover_submit(
+    request: Request,
+    conn: Db,
+    email: Annotated[str, Form()],
+    csrf_token: Annotated[str, Form()] = "",
+) -> Response:
+    settings = get_settings(request)
+    if not pre_session_csrf_ok(request, "recuperar", csrf_token):
+        return _public_page(
+            request, "recuperar.html", "recuperar", extra={"erro": MESSAGENS["csrf"]}
+        )
+    service.request_password_reset(conn, settings, email.strip())
+    return ir(request, "/entrar?aviso=pedido-enviado")
+
+
+@router.get("/recuperar/{token}")
+@router.get("/repor/{token}")
+@router.get("/repor-password/{token}")
+@router.get("/reset/{token}")
+@router.get("/reset-password/{token}")
+@router.get("/password-reset/{token}")
+def reset_form(request: Request, conn: Db, token: str) -> Response:
+    reset = service.get_password_reset_by_token(conn, token)
+    valido = (
+        reset is not None
+        and reset["consumed_at"] is None
+        and not security.is_expired(reset["expires_at"])
+    )
+    if not valido:
+        return _public_page(
+            request,
+            "repor_password.html",
+            "reset",
+            extra={"valido": False, "token": token},
+        )
+    return _public_page(
+        request,
+        "repor_password.html",
+        "reset",
+        extra={"valido": True, "token": token},
+    )
+
+
+@router.post("/recuperar/{token}")
+@router.post("/repor/{token}")
+@router.post("/repor-password/{token}")
+@router.post("/reset/{token}")
+@router.post("/reset-password/{token}")
+@router.post("/password-reset/{token}")
+def reset_submit(
+    request: Request,
+    conn: Db,
+    token: str,
+    password: Annotated[str, Form()],
+    password2: Annotated[str, Form()],
+    csrf_token: Annotated[str, Form()] = "",
+) -> Response:
+    settings = get_settings(request)
+    if not pre_session_csrf_ok(request, "reset", csrf_token):
+        return _public_page(
+            request,
+            "repor_password.html",
+            "reset",
+            extra={"valido": True, "token": token, "erro": MESSAGENS["csrf"]},
+        )
+    if password != password2:
+        return _public_page(
+            request,
+            "repor_password.html",
+            "reset",
+            extra={"valido": True, "token": token, "erro": MESSAGENS["nao-coincidem"]},
+        )
+    ok, reason = service.reset_password(conn, settings, token, password)
+    if not ok:
+        already_gone = "inválido" in reason or "expirado" in reason or "usado" in reason
+        if already_gone:
+            return _public_page(
+                request,
+                "repor_password.html",
+                "reset",
+                extra={"valido": False, "token": token},
+            )
+        return _public_page(
+            request,
+            "repor_password.html",
+            "reset",
+            extra={"valido": True, "token": token, "erro": reason},
+        )
+    return ir(request, "/entrar?aviso=alterada")
 
 
 # --------------------------------------------------------------------------

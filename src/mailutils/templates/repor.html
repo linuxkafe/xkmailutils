@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block titulo %}Repor palavra-passe — mailutils{% endblock %}
+
+{% block conteudo %}
+<div class="centered-page">
+  <div class="card card--raised">
+    {% if not valido %}
+    <h1>Link inválido</h1>
+    <div class="notice notice--erro" role="alert">
+      Este link de reposição é inválido ou expirou. Peça um novo.
+    </div>
+    <a href="{{ raiz }}/recuperar" class="btn btn--secondary">Pedir novo link</a>
+    {% else %}
+    <h1>Escolher nova palavra-passe</h1>
+
+    {% if erro %}
+    <div class="notice notice--erro" role="alert">{{ erro }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ raiz }}/recuperar/{{ token }}" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+
+      <label class="field" for="password">
+        <span class="field__label">Nova palavra-passe</span>
+        <input type="password" id="password" name="password" required
+               minlength="12" autocomplete="new-password">
+        <span class="field__hint">
+          Mínimo 12 caracteres. Comprimento conta mais do que símbolos.
+        </span>
+      </label>
+
+      <label class="field" for="password2">
+        <span class="field__label">Repetir a palavra-passe</span>
+        <input type="password" id="password2" name="password2" required
+               minlength="12" autocomplete="new-password">
+      </label>
+
+      <div class="actions">
+        <button type="submit" class="btn btn--primary">Guardar</button>
+      </div>
+    </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

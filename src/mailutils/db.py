@@ -17,7 +17,7 @@ from typing import Any
 
 #: Versão do esquema. Incrementar sempre que `migrate()` acrescenta DDL, e
 #: acrescentar o bloco correspondente em `_MIGRATIONS`.
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 #: Estrutura por omissão de uma assinatura guardada.
 #:
@@ -195,6 +195,18 @@ _MIGRATIONS = _MIGRATIONS + (
         updated_at TEXT    NOT NULL
     )
     """,
+    # Recuperação de palavra-passe: token opaco, digest na base, uso único.
+    """
+    CREATE TABLE IF NOT EXISTS password_resets (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token_hash   TEXT    NOT NULL UNIQUE,
+        created_at   TEXT    NOT NULL,
+        expires_at   TEXT    NOT NULL,
+        consumed_at  TEXT
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets (user_id, created_at)",
 )
 
 # As colunas que a reconstrução tira de `list_addresses`. Estão aqui para o
@@ -300,6 +312,7 @@ TABLE_NAMES = (
     "users",
     "senders",
     "compose_drafts",
+    "password_resets",
     "recipient_lists",
     "list_addresses",
     "devices",

@@ -18,7 +18,9 @@ from starlette.responses import Response
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
 #: Rotas sem sessão onde o cabeçalho de navegação não faz sentido.
-_PUBLIC_PAGES = frozenset({"/entrar", "/verificar", "/convite"})
+_PUBLIC_PAGES = frozenset(
+    {"/entrar", "/verificar", "/convite", "/recuperar", "/esqueci", "/forgot"}
+)
 
 #: Mensagens de interface indexadas por chave estável.
 #:
@@ -102,6 +104,8 @@ MESSAGENS: dict[str, str] = {
     "convite-enviado": "Convite enviado.",
     "revogado": "Dispositivo revogado.",
     "alterada": "Palavra-passe alterada.",
+    "pedido-enviado": "Se o email existir, enviámos um link para repor a palavra-passe.",
+    "token-invalido": "Este link de reposição é inválido ou expirou.",
     "bem-vindo": "Sessão iniciada.",
     "estado-alterado": "Estado da conta alterado.",
 }

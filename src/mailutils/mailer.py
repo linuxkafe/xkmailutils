@@ -357,11 +357,46 @@ def send_invite(settings: Settings, to_address: str, invite_url: str) -> None:
     send(settings, to_address, subject, text, html)
 
 
+def _render_password_reset_email(
+    reset_url: str, app_name: str, minutes: int
+) -> tuple[str, str, str]:
+    subject = f"Repor a palavra-passe do {app_name}"
+    text = (
+        f"Pediu para repor a palavra-passe do {app_name}.\n\n"
+        f"Para escolher uma nova, abra este endereço:\n\n"
+        f"    {reset_url}\n\n"
+        f"O link é válido durante {minutes} minutos e só pode ser usado uma vez.\n\n"
+        "Se não foi você, ignore este email. A palavra-passe não foi alterada.\n\n"
+        f"— {app_name}"
+    )
+    html = (
+        f'<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;'
+        f'color:#212121;line-height:22px;max-width:480px;">'
+        f"<p>Pediu para repor a palavra-passe do <strong>{app_name}</strong>.</p>"
+        f'<p><a href="{reset_url}" style="color:#0056b3;">Escolher nova palavra-passe</a></p>'
+        f'<p style="color:#555;font-size:13px;">O link é válido durante {minutes} '
+        f"minutos e só pode ser usado uma vez.</p>"
+        f'<p style="color:#555;font-size:13px;">Se não foi você, ignore este email. '
+        f"A palavra-passe não foi alterada.</p>"
+        f'<p style="color:#555;font-size:13px;">— {app_name}</p>'
+        f"</div>"
+    )
+    return subject, text, html
+
+
+def send_password_reset(
+    settings: Settings, to_address: str, reset_url: str, minutes: int = 30
+) -> None:
+    subject, text, html = _render_password_reset_email(reset_url, settings.mail_from_name, minutes)
+    send(settings, to_address, subject, text, html)
+
+
 __all__ = [
     "MailError",
     "send",
     "send_confirmation",
     "send_invite",
     "send_otp",
+    "send_password_reset",
     "send_sender_confirmation",
 ]

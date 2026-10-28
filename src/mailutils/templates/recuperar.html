@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block titulo %}Recuperar palavra-passe — mailutils{% endblock %}
+
+{% block conteudo %}
+<div class="centered-page">
+  <div class="card card--raised">
+    <h1>Recuperar palavra-passe</h1>
+
+    {% if erro %}
+    <div class="notice notice--erro" role="alert">{{ erro }}</div>
+    {% endif %}
+
+    {% if aviso %}
+    <div class="notice notice--ok" role="status">{{ aviso }}</div>
+    {% endif %}
+
+    <p class="muted small">
+      Escreva o email da conta. Se existir, enviamos um link para escolher
+      uma nova palavra-passe.
+    </p>
+
+    <form method="post" action="{{ raiz }}/recuperar" autocomplete="on">
+      <input type="hidden" name="csrf_token" value="{{ csrf }}">
+
+      <label class="field" for="email">
+        <span class="field__label">Email</span>
+        <input type="email" id="email" name="email" required autocomplete="username"
+               inputmode="email" maxlength="254">
+      </label>
+
+      <div class="actions">
+        <button type="submit" class="btn btn--primary">Enviar link</button>
+      </div>
+    </form>
+  </div>
+
+  <p class="small muted ta-center mt-4">
+    <a href="{{ raiz }}/entrar">Voltar ao início de sessão</a>
+  </p>
+</div>
+{% endblock %}
